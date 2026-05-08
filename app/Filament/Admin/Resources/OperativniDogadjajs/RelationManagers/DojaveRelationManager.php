@@ -1,25 +1,42 @@
 <?php
 
-namespace App\Filament\Admin\Resources\Dojavas\Tables;
+namespace App\Filament\Admin\Resources\OperativniDogadjajs\RelationManagers;
 
-use Filament\Actions\BulkActionGroup;
+use App\Filament\Admin\Resources\Dojavas\DojavaResource;
+use Filament\Actions\CreateAction;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
-class DojavasTable
+class DojaveRelationManager extends RelationManager
 {
-    public static function configure(Table $table): Table
+    protected static string $relationship = 'dojave';
+
+    protected static ?string $title = 'Dojave';
+    protected static ?string $modelLabel = 'Dojava';
+    protected static ?string $pluralModelLabel = 'Dojave';
+
+    public function form(Schema $schema): Schema
+    {
+        return DojavaResource::form($schema);
+    }
+
+    public function table(Table $table): Table
     {
         return $table
+            ->recordTitleAttribute('broj_dojave')
             ->columns([
                 TextColumn::make('broj_dojave')
                     ->label('Broj')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->weight('bold'),
 
                 TextColumn::make('vrijeme_zaprimanja')
                     ->label('Zaprimljeno')
@@ -33,14 +50,7 @@ class DojavasTable
 
                 TextColumn::make('jls.naziv')
                     ->label('JLS')
-                    ->searchable()
-                    ->sortable(),
-
-                TextColumn::make('dogadjaj.naziv')
-                    ->label('Događaj')
-                    ->placeholder('Samostalna')
-                    ->limit(30)
-                    ->toggleable(),
+                    ->searchable(),
 
                 TextColumn::make('tip_nepogode')
                     ->label('Tip')
@@ -91,16 +101,6 @@ class DojavasTable
                     }),
             ])
             ->filters([
-                SelectFilter::make('dogadjaj_id')
-                    ->label('Događaj')
-                    ->relationship('dogadjaj', 'naziv')
-                    ->preload(),
-
-                SelectFilter::make('jls_id')
-                    ->label('JLS')
-                    ->relationship('jls', 'naziv')
-                    ->preload(),
-
                 SelectFilter::make('prioritet')
                     ->label('Prioritet')
                     ->options([
@@ -117,29 +117,19 @@ class DojavasTable
                         'u_tijeku' => 'U tijeku',
                         'zavrsena' => 'Završena',
                     ]),
-
-                SelectFilter::make('tip_nepogode')
-                    ->label('Tip nepogode')
-                    ->options([
-                        'olujno_nevrijeme' => 'Olujno nevrijeme',
-                        'poplava' => 'Poplava',
-                        'pozar' => 'Požar',
-                        'snijeg_led' => 'Snijeg / led',
-                        'klizište' => 'Klizište',
-                        'tuca' => 'Tuča',
-                        'potres' => 'Potres',
-                        'ostalo' => 'Ostalo',
-                    ]),
             ])
             ->defaultSort('vrijeme_zaprimanja', 'desc')
+            ->headerActions([
+                CreateAction::make()
+                    ->label('Nova dojava'),
+            ])
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
+                DeleteAction::make(),
             ])
             ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
+                DeleteBulkAction::make(),
             ]);
     }
 }

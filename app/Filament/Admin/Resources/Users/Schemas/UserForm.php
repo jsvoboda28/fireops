@@ -4,6 +4,7 @@ namespace App\Filament\Admin\Resources\Users\Schemas;
 
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Hash;
@@ -31,6 +32,19 @@ class UserForm
                             ->unique(ignoreRecord: true)
                             ->maxLength(200)
                             ->placeholder('npr. ime.prezime@dvd-pakrac.hr'),
+
+                        Select::make('jls_id')
+                            ->label('Pripadnost JLS-u')
+                            ->relationship('jls', 'naziv')
+                            ->preload()
+                            ->searchable()
+                            ->placeholder('Bez pripadnosti (sve JLS)')
+                            ->helperText('Ostavi prazno za županijsku/super-admin razinu'),
+
+                        Toggle::make('aktivan')
+                            ->label('Aktivan korisnik')
+                            ->default(true)
+                            ->helperText('Neaktivni korisnici se ne mogu prijaviti'),
                     ]),
 
                 Section::make('Lozinka')
@@ -44,9 +58,9 @@ class UserForm
                             ->dehydrated(fn ($state) => filled($state))
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->minLength(8)
-                            ->helperText(fn (string $operation): string => 
-                                $operation === 'create' 
-                                    ? 'Minimum 8 znakova' 
+                            ->helperText(fn (string $operation): string =>
+                                $operation === 'create'
+                                    ? 'Minimum 8 znakova'
                                     : 'Ostavi prazno ako ne želiš mijenjati'
                             ),
 

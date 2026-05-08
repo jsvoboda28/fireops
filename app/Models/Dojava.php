@@ -3,13 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Dojava extends Model
 {
-    // Hrvatska množina za naziv tablice
     protected $table = 'dojavas';
     
-    // Sva polja koja se mogu masovno dodjeljivati
     protected $fillable = [
         'broj_dojave',
         'vrijeme_zaprimanja',
@@ -21,6 +20,8 @@ class Dojava extends Model
         'prijavitelj_anoniman',
         'adresa',
         'opcina',
+        'jls_id',
+        'dogadjaj_id',
         'latitude',
         'longitude',
         'tip_nepogode',
@@ -30,7 +31,6 @@ class Dojava extends Model
         'status',
     ];
     
-    // Tipovi podataka
     protected $casts = [
         'vrijeme_zaprimanja' => 'datetime',
         'vrijeme_zatvaranja' => 'datetime',
@@ -39,9 +39,27 @@ class Dojava extends Model
         'longitude' => 'decimal:7',
     ];
     
-    // Veza s operaterom (User koji je zaprimio)
-    public function operater()
+    /**
+     * Operater (User) koji je zaprimio dojavu.
+     */
+    public function operater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'operater_id');
+    }
+    
+    /**
+     * JLS kojem pripada dojava.
+     */
+    public function jls(): BelongsTo
+    {
+        return $this->belongsTo(Jls::class);
+    }
+    
+    /**
+     * Operativni događaj kojem dojava pripada.
+     */
+    public function dogadjaj(): BelongsTo
+    {
+        return $this->belongsTo(OperativniDogadjaj::class, 'dogadjaj_id');
     }
 }

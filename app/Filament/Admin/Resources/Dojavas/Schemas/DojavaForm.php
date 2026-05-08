@@ -38,6 +38,19 @@ class DojavaForm
                                 'sms_web' => 'SMS / Web',
                             ])
                             ->default('112'),
+
+                        Select::make('dogadjaj_id')
+                            ->label('Operativni događaj')
+                            ->relationship(
+                                'dogadjaj',
+                                'naziv',
+                                fn ($query) => $query->whereIn('status', ['aktivan', 'pracenje'])
+                            )
+                            ->preload()
+                            ->searchable()
+                            ->columnSpanFull()
+                            ->placeholder('Bez događaja (samostalna dojava)')
+                            ->helperText('Ako je dojava povezana s nekim aktivnim događajem, odaberi ga ovdje'),
                     ]),
 
                 Section::make('Lokacija')
@@ -50,10 +63,18 @@ class DojavaForm
                             ->columnSpanFull()
                             ->placeholder('npr. Industrijska 12, Pakrac'),
 
+                        Select::make('jls_id')
+                            ->label('JLS')
+                            ->relationship('jls', 'naziv', fn ($query) => $query->where('aktivan', true))
+                            ->preload()
+                            ->searchable()
+                            ->required()
+                            ->placeholder('Odaberi JLS...'),
+
                         TextInput::make('opcina')
-                            ->label('Općina / Grad')
+                            ->label('Općina / Naselje (slobodan unos)')
                             ->maxLength(100)
-                            ->placeholder('npr. Pakrac'),
+                            ->placeholder('npr. Pleternica, ako nije glavni grad'),
 
                         TextInput::make('latitude')
                             ->label('Latitude (GPS)')

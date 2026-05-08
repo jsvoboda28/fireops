@@ -2,18 +2,18 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'jls_id', 'aktivan'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
@@ -30,6 +30,7 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'aktivan' => 'boolean',
         ];
     }
 
@@ -38,8 +39,15 @@ class User extends Authenticatable implements FilamentUser
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        // Za sad svi prijavljeni korisnici imaju pristup
-        // Kasnije ćemo dodati provjeru uloga
-        return true;
+        // Samo aktivni korisnici mogu pristupiti
+        return $this->aktivan === true;
+    }
+
+    /**
+     * Veza s JLS-om (jedinica lokalne samouprave kojoj korisnik pripada).
+     */
+    public function jls(): BelongsTo
+    {
+        return $this->belongsTo(Jls::class);
     }
 }

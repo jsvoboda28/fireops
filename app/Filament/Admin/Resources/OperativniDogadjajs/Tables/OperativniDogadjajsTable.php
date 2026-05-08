@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Admin\Resources\Dojavas\Tables;
+namespace App\Filament\Admin\Resources\OperativniDogadjajs\Tables;
 
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -10,37 +10,24 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
-class DojavasTable
+class OperativniDogadjajsTable
 {
     public static function configure(Table $table): Table
     {
         return $table
             ->columns([
-                TextColumn::make('broj_dojave')
-                    ->label('Broj')
+                TextColumn::make('naziv')
+                    ->label('Naziv')
                     ->searchable()
-                    ->sortable(),
-
-                TextColumn::make('vrijeme_zaprimanja')
-                    ->label('Zaprimljeno')
-                    ->dateTime('d.m.Y H:i')
-                    ->sortable(),
-
-                TextColumn::make('adresa')
-                    ->label('Lokacija')
-                    ->searchable()
-                    ->limit(40),
+                    ->sortable()
+                    ->weight('bold')
+                    ->limit(50),
 
                 TextColumn::make('jls.naziv')
                     ->label('JLS')
+                    ->placeholder('Županijska razina')
                     ->searchable()
                     ->sortable(),
-
-                TextColumn::make('dogadjaj.naziv')
-                    ->label('Događaj')
-                    ->placeholder('Samostalna')
-                    ->limit(30)
-                    ->toggleable(),
 
                 TextColumn::make('tip_nepogode')
                     ->label('Tip')
@@ -56,19 +43,17 @@ class DojavasTable
                         default => $state,
                     }),
 
-                TextColumn::make('prioritet')
-                    ->label('Prioritet')
+                TextColumn::make('razina')
+                    ->label('Razina')
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
-                        'kriticna' => 'danger',
-                        'visoka' => 'warning',
-                        'standardna' => 'success',
+                        'lokalna' => 'info',
+                        'zupanijska' => 'warning',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state) => match ($state) {
-                        'kriticna' => 'Kritična',
-                        'visoka' => 'Visoka',
-                        'standardna' => 'Standardna',
+                        'lokalna' => 'Lokalna',
+                        'zupanijska' => 'Županijska',
                         default => $state,
                     }),
 
@@ -76,47 +61,73 @@ class DojavasTable
                     ->label('Status')
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
-                        'zaprimljena' => 'gray',
-                        'dodijeljena' => 'info',
-                        'u_tijeku' => 'warning',
-                        'zavrsena' => 'success',
+                        'pracenje' => 'info',
+                        'aktivan' => 'danger',
+                        'zatvoren' => 'gray',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state) => match ($state) {
-                        'zaprimljena' => 'Zaprimljena',
-                        'dodijeljena' => 'Dodijeljena',
-                        'u_tijeku' => 'U tijeku',
-                        'zavrsena' => 'Završena',
+                        'pracenje' => 'Praćenje',
+                        'aktivan' => 'Aktivan',
+                        'zatvoren' => 'Zatvoren',
                         default => $state,
                     }),
+
+                TextColumn::make('stupanj_sukoba')
+                    ->label('Stupanj')
+                    ->placeholder('-')
+                    ->badge()
+                    ->color(fn (?string $state) => match ($state) {
+                        'I' => 'success',
+                        'II' => 'info',
+                        'III' => 'warning',
+                        'IV' => 'danger',
+                        default => 'gray',
+                    }),
+
+                TextColumn::make('vrijeme_otvaranja')
+                    ->label('Otvoren')
+                    ->dateTime('d.m.Y H:i')
+                    ->sortable(),
+
+                TextColumn::make('vrijeme_zatvaranja')
+                    ->label('Zatvoren')
+                    ->dateTime('d.m.Y H:i')
+                    ->placeholder('Aktivan')
+                    ->sortable()
+                    ->toggleable(),
+
+                TextColumn::make('voditelj.name')
+                    ->label('Voditelj')
+                    ->placeholder('-')
+                    ->toggleable(),
+
+                TextColumn::make('dojave_count')
+                    ->label('Dojave')
+                    ->counts('dojave')
+                    ->badge()
+                    ->color('gray'),
             ])
             ->filters([
-                SelectFilter::make('dogadjaj_id')
-                    ->label('Događaj')
-                    ->relationship('dogadjaj', 'naziv')
-                    ->preload(),
+                SelectFilter::make('status')
+                    ->label('Status')
+                    ->options([
+                        'pracenje' => 'Praćenje',
+                        'aktivan' => 'Aktivan',
+                        'zatvoren' => 'Zatvoren',
+                    ]),
+
+                SelectFilter::make('razina')
+                    ->label('Razina')
+                    ->options([
+                        'lokalna' => 'Lokalna',
+                        'zupanijska' => 'Županijska',
+                    ]),
 
                 SelectFilter::make('jls_id')
                     ->label('JLS')
                     ->relationship('jls', 'naziv')
                     ->preload(),
-
-                SelectFilter::make('prioritet')
-                    ->label('Prioritet')
-                    ->options([
-                        'kriticna' => 'Kritična',
-                        'visoka' => 'Visoka',
-                        'standardna' => 'Standardna',
-                    ]),
-
-                SelectFilter::make('status')
-                    ->label('Status')
-                    ->options([
-                        'zaprimljena' => 'Zaprimljena',
-                        'dodijeljena' => 'Dodijeljena',
-                        'u_tijeku' => 'U tijeku',
-                        'zavrsena' => 'Završena',
-                    ]),
 
                 SelectFilter::make('tip_nepogode')
                     ->label('Tip nepogode')
@@ -131,7 +142,7 @@ class DojavasTable
                         'ostalo' => 'Ostalo',
                     ]),
             ])
-            ->defaultSort('vrijeme_zaprimanja', 'desc')
+            ->defaultSort('vrijeme_otvaranja', 'desc')
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),

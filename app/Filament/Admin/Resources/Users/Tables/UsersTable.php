@@ -6,8 +6,10 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
 class UsersTable
@@ -28,6 +30,12 @@ class UsersTable
                     ->copyable()
                     ->copyMessage('Email kopiran'),
 
+                TextColumn::make('jls.naziv')
+                    ->label('JLS')
+                    ->placeholder('Sve JLS')
+                    ->searchable()
+                    ->sortable(),
+
                 TextColumn::make('roles.name')
                     ->label('Uloge')
                     ->badge()
@@ -46,6 +54,10 @@ class UsersTable
                         default => $state,
                     }),
 
+                IconColumn::make('aktivan')
+                    ->label('Aktivan')
+                    ->boolean(),
+
                 TextColumn::make('email_verified_at')
                     ->label('Verificiran')
                     ->dateTime('d.m.Y H:i')
@@ -58,12 +70,6 @@ class UsersTable
                     ->dateTime('d.m.Y H:i')
                     ->sortable()
                     ->toggleable(),
-
-                TextColumn::make('updated_at')
-                    ->label('Ažuriran')
-                    ->dateTime('d.m.Y H:i')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('roles')
@@ -71,6 +77,18 @@ class UsersTable
                     ->relationship('roles', 'name')
                     ->multiple()
                     ->preload(),
+
+                SelectFilter::make('jls_id')
+                    ->label('Filtriraj po JLS-u')
+                    ->relationship('jls', 'naziv')
+                    ->preload(),
+
+                TernaryFilter::make('aktivan')
+                    ->label('Aktivan')
+                    ->boolean()
+                    ->trueLabel('Samo aktivni')
+                    ->falseLabel('Samo neaktivni')
+                    ->placeholder('Svi'),
             ])
             ->defaultSort('created_at', 'desc')
             ->recordActions([
