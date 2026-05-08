@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Postrojba extends Model
 {
@@ -45,5 +46,32 @@ class Postrojba extends Model
     public function jls(): BelongsTo
     {
         return $this->belongsTo(Jls::class);
+    }
+    
+    /**
+     * Svi vatrogasci u postrojbi.
+     */
+    public function vatrogasci(): HasMany
+    {
+        return $this->hasMany(Vatrogasac::class);
+    }
+    
+    /**
+     * Stvarni broj članova (broj vatrogasaca u postrojbi).
+     */
+    public function getStvarniBrojClanovaAttribute(): int
+    {
+        return $this->vatrogasci()->count();
+    }
+    
+    /**
+     * Stvarni broj operativnih vatrogasaca.
+     */
+    public function getStvarniBrojOperativnihAttribute(): int
+    {
+        return $this->vatrogasci()
+            ->where('operativan', true)
+            ->where('status', 'aktivan')
+            ->count();
     }
 }

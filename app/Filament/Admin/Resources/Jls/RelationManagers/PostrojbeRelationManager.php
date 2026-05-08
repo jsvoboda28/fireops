@@ -1,22 +1,37 @@
 <?php
 
-namespace App\Filament\Admin\Resources\Postrojbas\Tables;
+namespace App\Filament\Admin\Resources\Jls\RelationManagers;
 
-use Filament\Actions\BulkActionGroup;
+use App\Filament\Admin\Resources\Postrojbas\PostrojbaResource;
+use Filament\Actions\CreateAction;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
-class PostrojbasTable
+class PostrojbeRelationManager extends RelationManager
 {
-    public static function configure(Table $table): Table
+    protected static string $relationship = 'postrojbe';
+
+    protected static ?string $title = 'Postrojbe';
+    protected static ?string $modelLabel = 'Postrojba';
+    protected static ?string $pluralModelLabel = 'Postrojbe';
+
+    public function form(Schema $schema): Schema
+    {
+        return PostrojbaResource::form($schema);
+    }
+
+    public function table(Table $table): Table
     {
         return $table
+            ->recordTitleAttribute('naziv')
             ->columns([
                 TextColumn::make('skraceni_naziv')
                     ->label('Naziv')
@@ -44,7 +59,7 @@ class PostrojbasTable
                     }),
 
                 TextColumn::make('kategorija')
-                    ->label('Kategorija')
+                    ->label('Kat.')
                     ->placeholder('-')
                     ->badge()
                     ->color(fn (?string $state) => match ($state) {
@@ -54,39 +69,12 @@ class PostrojbasTable
                         default => 'gray',
                     }),
 
-                TextColumn::make('jls.naziv')
-                    ->label('JLS')
-                    ->searchable()
-                    ->sortable(),
-
                 TextColumn::make('mjesto')
                     ->label('Mjesto')
-                    ->searchable()
-                    ->toggleable(),
+                    ->searchable(),
 
                 TextColumn::make('telefon')
                     ->label('Telefon')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                TextColumn::make('vatrogasci_count')
-                    ->label('Članovi')
-                    ->counts('vatrogasci')
-                    ->badge()
-                    ->color('gray')
-                    ->sortable()
-                    ->toggleable(),
-
-                TextColumn::make('vatrogasci_operativni_count')
-                    ->label('Operativni')
-                    ->state(function ($record) {
-                        return $record->vatrogasci()
-                            ->where('operativan', true)
-                            ->where('status', 'aktivan')
-                            ->count();
-                    })
-                    ->badge()
-                    ->color('success')
                     ->toggleable(),
 
                 IconColumn::make('aktivna')
@@ -106,43 +94,18 @@ class PostrojbasTable
                         'pvpp' => 'PVPP',
                         'ostalo' => 'Ostalo',
                     ]),
-
-                SelectFilter::make('kategorija')
-                    ->label('Kategorija')
-                    ->options([
-                        'I' => 'I. kategorija',
-                        'II' => 'II. kategorija',
-                        'III' => 'III. kategorija',
-                    ]),
-
-                SelectFilter::make('jls_id')
-                    ->label('JLS')
-                    ->relationship('jls', 'naziv')
-                    ->preload(),
-
-                TernaryFilter::make('aktivna')
-                    ->label('Aktivna')
-                    ->boolean()
-                    ->trueLabel('Samo aktivne')
-                    ->falseLabel('Samo neaktivne')
-                    ->placeholder('Sve'),
-
-                TernaryFilter::make('operativno_spremna')
-                    ->label('Operativno spremna')
-                    ->boolean()
-                    ->trueLabel('Spremne')
-                    ->falseLabel('Nespremne')
-                    ->placeholder('Sve'),
             ])
             ->defaultSort('naziv', 'asc')
+            ->headerActions([
+                CreateAction::make()
+                    ->label('Nova postrojba'),
+            ])
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
             ])
             ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
+                DeleteBulkAction::make(),
             ]);
     }
 }

@@ -115,13 +115,20 @@ class PostrojbaInfolist
                             ->label('Operativno spremna')
                             ->boolean(),
 
-                        TextEntry::make('broj_clanova')
+                        TextEntry::make('ukupno_clanova')
                             ->label('Ukupno članova')
-                            ->numeric(),
+                            ->state(fn ($record) => $record->vatrogasci()->count())
+                            ->badge()
+                            ->color('gray'),
 
-                        TextEntry::make('broj_operativnih')
+                        TextEntry::make('ukupno_operativnih')
                             ->label('Operativni članovi')
-                            ->numeric(),
+                            ->state(fn ($record) => $record->vatrogasci()
+                                ->where('operativan', true)
+                                ->where('status', 'aktivan')
+                                ->count())
+                            ->badge()
+                            ->color('success'),
                     ]),
 
                 Section::make('Napomena')

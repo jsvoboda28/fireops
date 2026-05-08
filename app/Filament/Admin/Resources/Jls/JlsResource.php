@@ -5,6 +5,7 @@ namespace App\Filament\Admin\Resources\Jls;
 use App\Filament\Admin\Resources\Jls\Pages\CreateJls;
 use App\Filament\Admin\Resources\Jls\Pages\EditJls;
 use App\Filament\Admin\Resources\Jls\Pages\ListJls;
+use App\Filament\Admin\Resources\Jls\RelationManagers\PostrojbeRelationManager;
 use App\Filament\Admin\Resources\Jls\Schemas\JlsForm;
 use App\Filament\Admin\Resources\Jls\Tables\JlsTable;
 use App\Models\Jls;
@@ -44,7 +45,7 @@ class JlsResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            PostrojbeRelationManager::class,
         ];
     }
 
