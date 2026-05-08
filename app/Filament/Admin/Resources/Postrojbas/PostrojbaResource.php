@@ -7,6 +7,7 @@ use App\Filament\Admin\Resources\Postrojbas\Pages\EditPostrojba;
 use App\Filament\Admin\Resources\Postrojbas\Pages\ListPostrojbas;
 use App\Filament\Admin\Resources\Postrojbas\Pages\ViewPostrojba;
 use App\Filament\Admin\Resources\Postrojbas\RelationManagers\VatrogasciRelationManager;
+use App\Filament\Admin\Resources\Postrojbas\RelationManagers\VozilaRelationManager;
 use App\Filament\Admin\Resources\Postrojbas\Schemas\PostrojbaForm;
 use App\Filament\Admin\Resources\Postrojbas\Schemas\PostrojbaInfolist;
 use App\Filament\Admin\Resources\Postrojbas\Tables\PostrojbasTable;
@@ -50,6 +51,7 @@ class PostrojbaResource extends Resource
     {
         return [
             VatrogasciRelationManager::class,
+            VozilaRelationManager::class,
         ];
     }
 

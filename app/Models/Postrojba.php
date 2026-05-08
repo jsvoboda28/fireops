@@ -57,7 +57,15 @@ class Postrojba extends Model
     }
     
     /**
-     * Stvarni broj članova (broj vatrogasaca u postrojbi).
+     * Sva vozila u postrojbi.
+     */
+    public function vozila(): HasMany
+    {
+        return $this->hasMany(Vozilo::class);
+    }
+    
+    /**
+     * Stvarni broj članova.
      */
     public function getStvarniBrojClanovaAttribute(): int
     {
