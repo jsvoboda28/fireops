@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" fill="none">
+  <!-- Plamen ikona -->
+  <g transform="translate(8, 8)">
+    <path d="M22 4 C22 4, 12 14, 12 24 C12 30, 16 34, 22 34 C28 34, 32 30, 32 24 C32 18, 28 14, 26 12 C26 16, 24 18, 22 18 C22 14, 24 10, 22 4Z" 
+          fill="url(#flameGrad)"/>
+    <circle cx="22" cy="26" r="4" fill="#FCD34D"/>
+  </g>
+  
+  <!-- Tekst FireOps -->
+  <text x="56" y="38" font-family="Inter, sans-serif" font-weight="800" font-size="24" fill="currentColor">
+    Fire<tspan fill="#DC2626">Ops</tspan>
+  </text>
+  
+  <!-- Mali podnaslov -->
+  <text x="56" y="52" font-family="Inter, sans-serif" font-weight="500" font-size="9" fill="#6B7280" letter-spacing="0.05em">
+    SUSTAV ZA ELEMENTARNE NEPOGODE
+  </text>
+  
+  <defs>
+    <linearGradient id="flameGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#DC2626"/>
+      <stop offset="50%" style="stop-color:#F97316"/>
+      <stop offset="100%" style="stop-color:#FCD34D"/>
+    </linearGradient>
+  </defs>
+</svg>
