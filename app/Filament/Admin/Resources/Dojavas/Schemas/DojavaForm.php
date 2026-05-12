@@ -68,6 +68,14 @@ class DojavaForm
                             ->dehydrated(false)
                             ->columnSpanFull()
                             ->helperText('Pretraži po ulici, broju ili naselju. Odabir popunjava sve donje podatke.')
+                            ->getOptionLabelUsing(function ($value): ?string {
+                                if (!$value) return null;
+                                $kb = KucniBroj::with(['ulica', 'naselje'])->find($value);
+                                if (!$kb) return null;
+                                return ($kb->ulica?->naziv ?? '?')
+                                    . ' ' . $kb->broj
+                                    . ', ' . ($kb->naselje?->naziv ?? '?');
+                            })
                             ->getSearchResultsUsing(function (string $search): array {
                                 if (strlen($search) < 2) {
                                     return [];

@@ -3,118 +3,31 @@
 namespace App\Filament\Admin\Widgets;
 
 use App\Models\OperativniDogadjaj;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Table;
-use Filament\Widgets\TableWidget as BaseWidget;
+use Filament\Widgets\Widget;
 
-class AktivniDogadjaji extends BaseWidget
+class AktivniDogadjaji extends Widget
 {
-    protected static ?int $sort = 0;
+    protected string $view = 'filament.admin.widgets.aktivni-dogadjaji';
 
     protected int|string|array $columnSpan = 'full';
 
-    protected static ?string $heading = 'Aktivni operativni događaji';
+    protected static ?int $sort = 0;
 
-    public function table(Table $table): Table
+    public function getViewData(): array
     {
-        return $table
-            ->query(
-                OperativniDogadjaj::query()
-                    ->whereIn('status', ['aktivan', 'pracenje'])
-                    ->withCount('dojave')
-                    ->latest('vrijeme_otvaranja')
-            )
-            ->columns([
-                TextColumn::make('naziv')
-                    ->label('Naziv')
-                    ->searchable()
-                    ->weight('bold')
-                    ->limit(50),
+        $dogadjaji = OperativniDogadjaj::query()
+            ->whereIn('status', ['aktivan', 'pracenje'])
+            ->withCount('dojave')
+            ->with(['jls', 'voditelj'])
+            ->orderByRaw("CASE status WHEN 'aktivan' THEN 1 WHEN 'pracenje' THEN 2 ELSE 3 END")
+            ->orderByRaw("CASE stupanj_sukoba WHEN 'IV' THEN 1 WHEN 'III' THEN 2 WHEN 'II' THEN 3 WHEN 'I' THEN 4 ELSE 5 END")
+            ->latest('vrijeme_otvaranja')
+            ->limit(6)
+            ->get();
 
-                TextColumn::make('jls.naziv')
-                    ->label('JLS')
-                    ->placeholder('Županijska')
-                    ->sortable(),
-
-                TextColumn::make('tip_nepogode')
-                    ->label('Tip')
-                    ->formatStateUsing(fn (string $state) => match ($state) {
-                        'olujno_nevrijeme' => 'Olujno',
-                        'poplava' => 'Poplava',
-                        'pozar' => 'Požar',
-                        'snijeg_led' => 'Snijeg/led',
-                        'klizište' => 'Klizište',
-                        'tuca' => 'Tuča',
-                        'potres' => 'Potres',
-                        'ostalo' => 'Ostalo',
-                        default => $state,
-                    }),
-
-                TextColumn::make('razina')
-                    ->label('Razina')
-                    ->badge()
-                    ->color(fn (string $state) => match ($state) {
-                        'lokalna' => 'info',
-                        'zupanijska' => 'warning',
-                        default => 'gray',
-                    })
-                    ->formatStateUsing(fn (string $state) => match ($state) {
-                        'lokalna' => 'Lokalna',
-                        'zupanijska' => 'Županijska',
-                        default => $state,
-                    }),
-
-                TextColumn::make('status')
-                    ->label('Status')
-                    ->badge()
-                    ->color(fn (string $state) => match ($state) {
-                        'pracenje' => 'info',
-                        'aktivan' => 'danger',
-                        default => 'gray',
-                    })
-                    ->formatStateUsing(fn (string $state) => match ($state) {
-                        'pracenje' => 'Praćenje',
-                        'aktivan' => 'Aktivan',
-                        default => $state,
-                    }),
-
-                TextColumn::make('stupanj_sukoba')
-                    ->label('Stupanj')
-                    ->placeholder('-')
-                    ->badge()
-                    ->color(fn (?string $state) => match ($state) {
-                        'I' => 'success',
-                        'II' => 'info',
-                        'III' => 'warning',
-                        'IV' => 'danger',
-                        default => 'gray',
-                    }),
-
-                TextColumn::make('vrijeme_otvaranja')
-                    ->label('Otvoren')
-                    ->dateTime('d.m.Y H:i')
-                    ->sortable(),
-
-                TextColumn::make('trajanje')
-                    ->label('Traje')
-                    ->state(fn ($record) => $record->trajanje)
-                    ->badge()
-                    ->color('gray'),
-
-                TextColumn::make('dojave_count')
-                    ->label('Dojave')
-                    ->badge()
-                    ->color('warning'),
-
-                TextColumn::make('voditelj.name')
-                    ->label('Voditelj')
-                    ->placeholder('-')
-                    ->toggleable(),
-            ])
-            ->paginated([5, 10, 25])
-            ->defaultPaginationPageOption(5)
-            ->emptyStateHeading('Nema aktivnih događaja')
-            ->emptyStateDescription('Trenutno nema otvorenih operativnih događaja.')
-            ->emptyStateIcon('heroicon-o-check-circle');
+        return [
+            'dogadjaji' => $dogadjaji,
+            'ukupno' => OperativniDogadjaj::whereIn('status', ['aktivan', 'pracenje'])->count(),
+        ];
     }
 }
