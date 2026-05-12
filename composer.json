@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.3",
         "bezhansalleh/filament-shield": "^4.2",
+        "dotswan/filament-map-picker": "^2.3",
         "filament/filament": "^4.0",
         "laravel/framework": "^13.7",
         "laravel/tinker": "^3.0",
