@@ -24,9 +24,9 @@ class DojavaForm
                     ->schema([
                         TextInput::make('broj_dojave')
                             ->label('Broj dojave')
-                            ->required()
                             ->maxLength(20)
-                            ->placeholder('npr. 2026-001234')
+                            ->placeholder('Auto-generira se ako je prazno')
+                            ->helperText('Ostavi prazno za automatsko generiranje (npr. 2026-001234)')
                             ->unique(ignoreRecord: true),
 
                         Select::make('kanal_dojave')
@@ -249,8 +249,8 @@ class DojavaForm
 
                         DateTimePicker::make('vrijeme_zaprimanja')
                             ->label('Vrijeme zaprimanja')
-                            ->required()
-                            ->default(now()),
+                            ->default(now())
+                            ->helperText('Auto-popunjava se na trenutno vrijeme'),
 
                         DateTimePicker::make('vrijeme_zatvaranja')
                             ->label('Vrijeme zatvaranja'),

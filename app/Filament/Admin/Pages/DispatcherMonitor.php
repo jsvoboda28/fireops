@@ -26,6 +26,8 @@ class DispatcherMonitor extends Page
 
     public Width|string|null $maxContentWidth = Width::Full;
 
+    protected ?string $pollingInterval = '30s';
+
     public function getViewData(): array
     {
         $dojave = Dojava::query()
@@ -52,6 +54,7 @@ class DispatcherMonitor extends Page
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
             ->where('aktivna', true)
+            ->with('jls')
             ->get();
 
         $aktivnihDogadjaja = OperativniDogadjaj::where('status', 'aktivan')->count();
@@ -67,7 +70,7 @@ class DispatcherMonitor extends Page
             $stanje = ['naslov' => 'PRIPRAVNOST', 'boja' => '#059669'];
         }
 
-        // GeoJSON za Leaflet
+        // Detaljni podaci za detalje panel
         $mapaData = [
             'postrojbe' => $postrojbe->map(fn($p) => [
                 'id' => $p->id,
@@ -75,13 +78,23 @@ class DispatcherMonitor extends Page
                 'tip' => $p->tip ?? 'ostalo',
                 'lat' => (float) $p->latitude,
                 'lng' => (float) $p->longitude,
-                'operativna' => $p->operativno_spremna ?? false,
+                'operativna' => (bool) ($p->operativno_spremna ?? false),
+                'adresa' => $p->adresa ?? '—',
+                'jls' => $p->jls?->naziv ?? '—',
+                'telefon' => $p->telefon ?? null,
             ])->toArray(),
             'dojave' => $dojave->filter(fn($d) => $d->latitude && $d->longitude)->map(fn($d) => [
                 'id' => $d->id,
                 'broj' => $d->broj_dojave,
                 'adresa' => $d->adresa,
                 'prioritet' => $d->prioritet,
+                'tip' => $d->tip_nepogode,
+                'status' => $d->status,
+                'opis' => $d->opis,
+                'jls' => $d->jls?->naziv ?? '—',
+                'ugrozenost' => $d->ugrozenost_ljudi,
+                'vrijeme' => $d->vrijeme_zaprimanja->format('d.m.Y H:i'),
+                'protekloMinuta' => $d->vrijeme_zaprimanja->diffInMinutes(now()),
                 'lat' => (float) $d->latitude,
                 'lng' => (float) $d->longitude,
             ])->values()->toArray(),
@@ -94,7 +107,7 @@ class DispatcherMonitor extends Page
             'brojDojava' => $dojave->count(),
             'brojDogadjaja' => $dogadjaji->count(),
             'brojPostrojbi' => $postrojbe->count(),
-            'mapaData' => json_encode($mapaData),
+            'mapaData' => json_encode($mapaData, JSON_UNESCAPED_UNICODE),
         ];
     }
 }
