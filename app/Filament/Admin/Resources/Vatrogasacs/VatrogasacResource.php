@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class VatrogasacResource extends Resource
 {
@@ -24,11 +25,12 @@ class VatrogasacResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'prezime';
 
-    // Hrvatski nazivi
     protected static ?string $modelLabel = 'Vatrogasac';
     protected static ?string $pluralModelLabel = 'Vatrogasci';
     protected static ?string $navigationLabel = 'Vatrogasci';
-    protected static ?int $navigationSort = 6;
+    protected static ?int $navigationSort = 2;
+    
+    protected static string|UnitEnum|null $navigationGroup = 'Resursi';
 
     public static function form(Schema $schema): Schema
     {
@@ -47,9 +49,7 @@ class VatrogasacResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array

@@ -30,14 +30,10 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             
-            // ===========================================
-            // BRAND — FireOps vatrogasna tema
-            // ===========================================
             ->brandName('FireOps')
             ->brandLogo(asset('images/fireops-logo.svg'))
             ->brandLogoHeight('2.5rem')
             
-            // Boje — vatrogasna paleta (crveno + narančasto)
             ->colors([
                 'primary' => Color::Red,
                 'danger' => Color::Red,
@@ -47,24 +43,16 @@ class AdminPanelProvider extends PanelProvider
                 'gray' => Color::Slate,
             ])
             
-            // Font
             ->font('Inter')
             
-            // Sidebar
             ->sidebarCollapsibleOnDesktop()
             
-            // ===========================================
-            // NAVIGACIJSKE GRUPE
-            // ===========================================
             ->navigationGroups([
                 'Operativa',
                 'Resursi',
                 'Postavke sustava',
             ])
             
-            // ===========================================
-            // RESURSI I STRANICE
-            // ===========================================
             ->discoverResources(in: app_path('Filament/Admin/Resources'), for: 'App\Filament\Admin\Resources')
             ->discoverPages(in: app_path('Filament/Admin/Pages'), for: 'App\Filament\Admin\Pages')
             ->pages([
@@ -72,9 +60,6 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Admin/Widgets'), for: 'App\Filament\Admin\Widgets')
             
-            // ===========================================
-            // RENDER HOOKS — Sustav operativan badge
-            // ===========================================
             ->renderHook(
                 PanelsRenderHook::TOPBAR_END,
                 fn () => Blade::render('
@@ -97,7 +82,10 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->plugins([
-                FilamentShieldPlugin::make(),
+                FilamentShieldPlugin::make()
+                    ->navigationGroup('Postavke sustava')
+                    ->navigationSort(99)
+                    ->navigationLabel('Uloge'),
             ])
             ->authMiddleware([
                 Authenticate::class,

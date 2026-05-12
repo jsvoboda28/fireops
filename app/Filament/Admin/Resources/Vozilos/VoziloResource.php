@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class VoziloResource extends Resource
 {
@@ -24,11 +25,12 @@ class VoziloResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'registracija';
 
-    // Hrvatski nazivi
     protected static ?string $modelLabel = 'Vozilo';
     protected static ?string $pluralModelLabel = 'Vozila';
     protected static ?string $navigationLabel = 'Vozila';
-    protected static ?int $navigationSort = 7;
+    protected static ?int $navigationSort = 3;
+    
+    protected static string|UnitEnum|null $navigationGroup = 'Resursi';
 
     public static function form(Schema $schema): Schema
     {
@@ -47,9 +49,7 @@ class VoziloResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array

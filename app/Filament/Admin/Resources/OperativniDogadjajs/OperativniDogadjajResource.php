@@ -16,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class OperativniDogadjajResource extends Resource
 {
@@ -25,11 +26,12 @@ class OperativniDogadjajResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'naziv';
 
-    // Hrvatski nazivi
     protected static ?string $modelLabel = 'Operativni događaj';
     protected static ?string $pluralModelLabel = 'Operativni događaji';
     protected static ?string $navigationLabel = 'Operativni događaji';
-    protected static ?int $navigationSort = 0; // Prvi u listi - najvažniji entitet
+    protected static ?int $navigationSort = 2;
+    
+    protected static string|UnitEnum|null $navigationGroup = 'Operativa';
 
     public static function form(Schema $schema): Schema
     {
@@ -63,9 +65,6 @@ class OperativniDogadjajResource extends Resource
         ];
     }
 
-    /**
-     * Badge na sidebar pokazuje broj aktivnih događaja
-     */
     public static function getNavigationBadge(): ?string
     {
         $aktivnih = OperativniDogadjaj::where('status', 'aktivan')->count();

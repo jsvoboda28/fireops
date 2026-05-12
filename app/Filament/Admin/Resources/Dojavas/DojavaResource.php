@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class DojavaResource extends Resource
 {
@@ -24,11 +25,12 @@ class DojavaResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'broj_dojave';
 
-    // Hrvatski nazivi
     protected static ?string $modelLabel = 'Dojava';
     protected static ?string $pluralModelLabel = 'Dojave';
     protected static ?string $navigationLabel = 'Dojave';
     protected static ?int $navigationSort = 1;
+    
+    protected static string|UnitEnum|null $navigationGroup = 'Operativa';
 
     public static function form(Schema $schema): Schema
     {
@@ -47,9 +49,7 @@ class DojavaResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array

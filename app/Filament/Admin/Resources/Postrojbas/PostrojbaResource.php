@@ -17,6 +17,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class PostrojbaResource extends Resource
 {
@@ -26,11 +27,12 @@ class PostrojbaResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'naziv';
 
-    // Hrvatski nazivi
     protected static ?string $modelLabel = 'Postrojba';
     protected static ?string $pluralModelLabel = 'Postrojbe';
     protected static ?string $navigationLabel = 'Postrojbe';
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 1;
+    
+    protected static string|UnitEnum|null $navigationGroup = 'Resursi';
 
     public static function form(Schema $schema): Schema
     {
