@@ -16,7 +16,7 @@ class OperativaKarta extends Page
     
     protected static ?string $navigationLabel = 'Operativna karta';
     
-    protected static ?string $title = 'Operativna karta — Full Screen';
+    protected static ?string $title = 'Operativna karta';
     
     protected static ?int $navigationSort = -9;
 
@@ -35,11 +35,13 @@ class OperativaKarta extends Page
             ->with('jls')
             ->get();
 
+        // Samo dojave KOJE NISU vezane na intervenciju
         $dojave = Dojava::query()
+            ->whereNull('intervencija_id')
             ->whereIn('status', ['zaprimljena', 'dodijeljena', 'u_tijeku'])
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
-            ->with(['jls', 'intervencija'])
+            ->with(['jls'])
             ->get();
 
         $intervencije = Intervencija::query()
@@ -67,7 +69,7 @@ class OperativaKarta extends Page
                 'operativna' => (bool) ($p->operativno_spremna ?? false),
                 'adresa' => $p->adresa ?? '—',
                 'jls' => $p->jls?->naziv ?? '—',
-            ])->toArray(),
+            ])->values()->toArray(),
             
             'dojave' => $dojave->map(fn($d) => [
                 'id' => $d->id,
@@ -80,7 +82,6 @@ class OperativaKarta extends Page
                 'vrijeme' => $d->vrijeme_zaprimanja->format('d.m.Y H:i'),
                 'lat' => (float) $d->latitude,
                 'lng' => (float) $d->longitude,
-                'imaIntervenciju' => !is_null($d->intervencija_id),
             ])->values()->toArray(),
             
             'intervencije' => $intervencije->map(fn($i) => [
@@ -98,9 +99,30 @@ class OperativaKarta extends Page
             ])->values()->toArray(),
 
             'timovi' => $timoviNaTerenu->map(function($t) {
-                // Tim je na lokaciji svoje intervencije
-                $lat = $t->intervencija?->latitude;
-                $lng = $t->intervencija?->longitude;
+                $intLat = $t->intervencija?->latitude;
+                $intLng = $t->intervencija?->longitude;
+                $bazaLat = $t->bazaPostrojba?->latitude;
+                $bazaLng = $t->bazaPostrojba?->longitude;
+                
+                $lat = null;
+                $lng = null;
+                
+                if ($t->trenutni_status === 'polazak') {
+                    $lat = $bazaLat ?? $intLat;
+                    $lng = $bazaLng ?? $intLng;
+                } elseif ($t->trenutni_status === 'na_mjestu') {
+                    $lat = $intLat;
+                    $lng = $intLng;
+                } elseif ($t->trenutni_status === 'povratak') {
+                    if ($bazaLat && $intLat) {
+                        $lat = ($bazaLat + $intLat) / 2;
+                        $lng = ($bazaLng + $intLng) / 2;
+                    } else {
+                        $lat = $intLat ?? $bazaLat;
+                        $lng = $intLng ?? $bazaLng;
+                    }
+                }
+                
                 if (!$lat || !$lng) return null;
                 
                 return [
@@ -110,6 +132,8 @@ class OperativaKarta extends Page
                     'zapovjednik' => $t->zapovjednik?->puno_ime ?? '—',
                     'brojClanova' => $t->trenutniClanovi->count(),
                     'intervencija' => $t->intervencija?->naziv,
+                    'intervencijaId' => $t->intervencija_id,
+                    'bazaPostrojba' => $t->bazaPostrojba?->naziv ?? '—',
                     'lat' => (float) $lat,
                     'lng' => (float) $lng,
                 ];
