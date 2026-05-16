@@ -17,6 +17,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Support\Str;
 
 class EditIntervencija extends EditRecord
 {
@@ -27,6 +28,7 @@ class EditIntervencija extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            // ===== NOVI TIM (ad-hoc, od nule) =====
             Action::make('noviTim')
                 ->label('➕ Novi tim')
                 ->color('success')
@@ -99,6 +101,125 @@ class EditIntervencija extends EditRecord
                         ->send();
                 }),
 
+            // ===== POŠALJI POSTOJEĆI TIM (iz baze ili s druge intervencije) =====
+            Action::make('posaljiPostojeciTim')
+                ->label('🚒 Pošalji tim')
+                ->color('info')
+                ->button()
+                ->modalHeading('Pošalji postojeći tim na ovu intervenciju')
+                ->modalDescription('Možeš poslati tim koji je u bazi ili premjestiti s druge intervencije.')
+                ->modalSubmitActionLabel('Pošalji tim')
+                ->schema([
+                    Select::make('tim_id')
+                        ->label('Tim')
+                        ->options(function () {
+                            return Tim::where('trenutni_status', '!=', 'raspusten')
+                                ->where(function ($q) {
+                                    $q->whereNull('intervencija_id')
+                                      ->orWhere('intervencija_id', '!=', $this->record->id);
+                                })
+                                ->with(['bazaPostrojba', 'zapovjednik', 'trenutniClanovi', 'intervencija'])
+                                ->orderBy('naziv')
+                                ->get()
+                                ->mapWithKeys(function ($t) {
+                                    $brojClanova = $t->trenutniClanovi->count();
+                                    $gdje = $t->intervencija_id 
+                                        ? '🔥 na drugoj: ' . ($t->intervencija?->naziv ? Str::limit($t->intervencija->naziv, 25) : '?')
+                                        : '🏠 u bazi';
+                                    return [
+                                        $t->id => $t->naziv 
+                                            . ' (' . ($t->bazaPostrojba?->skraceni_naziv ?? $t->bazaPostrojba?->naziv ?? '?') . ')'
+                                            . ' • ' . $brojClanova . ' članova'
+                                            . ' • ' . $gdje
+                                    ];
+                                })
+                                ->toArray();
+                        })
+                        ->searchable()
+                        ->required()
+                        ->helperText('Pretraži tim po nazivu ili postrojbi'),
+                ])
+                ->action(function (array $data) {
+                    $tim = Tim::find($data['tim_id']);
+                    if (!$tim) return;
+
+                    $staraIntervencija = $tim->intervencija_id;
+                    $opis = $staraIntervencija 
+                        ? 'Tim premješten s druge intervencije'
+                        : 'Tim poslan iz baze na intervenciju';
+
+                    $tim->update([
+                        'intervencija_id' => $this->record->id,
+                        'trenutni_status' => 'polazak',
+                    ]);
+
+                    TimStatusLog::create([
+                        'tim_id' => $tim->id,
+                        'status' => 'polazak',
+                        'vrijeme' => now(),
+                        'autor_id' => auth()->id(),
+                        'intervencija_id' => $this->record->id,
+                        'napomena' => $opis,
+                    ]);
+
+                    Notification::make()
+                        ->title('Tim poslan')
+                        ->body("Tim '{$tim->naziv}' je sada na ovoj intervenciji. " . $opis)
+                        ->success()
+                        ->send();
+                }),
+
+            // ===== DODAJ POSTOJEĆU DOJAVU =====
+            Action::make('dodajDojavu')
+                ->label('📞 Dodaj dojavu')
+                ->color('warning')
+                ->button()
+                ->modalHeading('Dodaj postojeću dojavu u ovu intervenciju')
+                ->modalDescription('Prikazane su sve dojave koje nisu vezane na neku intervenciju.')
+                ->modalSubmitActionLabel('Dodaj u intervenciju')
+                ->schema([
+                    Select::make('dojava_id')
+                        ->label('Dojava')
+                        ->options(function () {
+                            return Dojava::whereNull('intervencija_id')
+                                ->orderBy('vrijeme_zaprimanja', 'desc')
+                                ->limit(50)
+                                ->get()
+                                ->mapWithKeys(function ($d) {
+                                    $prio = match($d->prioritet) {
+                                        'kriticna' => '🔴',
+                                        'visoka' => '🟡',
+                                        default => '🟢',
+                                    };
+                                    return [
+                                        $d->id => $prio . ' #' . $d->broj_dojave 
+                                            . ' • ' . Str::limit($d->adresa, 40)
+                                            . ' • ' . $d->vrijeme_zaprimanja->format('d.m. H:i')
+                                    ];
+                                })
+                                ->toArray();
+                        })
+                        ->searchable()
+                        ->required()
+                        ->helperText('Pretraži po broju ili adresi'),
+                ])
+                ->action(function (array $data) {
+                    $dojava = Dojava::find($data['dojava_id']);
+                    if (!$dojava) return;
+
+                    $dojava->update([
+                        'intervencija_id' => $this->record->id,
+                        'status' => 'dodijeljena',
+                    ]);
+
+                    Notification::make()
+                        ->title('Dojava dodana')
+                        ->body("Dojava #{$dojava->broj_dojave} je sad dio intervencije")
+                        ->success()
+                        ->send();
+                }),
+
+            // ===== ZATVORI INTERVENCIJU =====
             Action::make('zatvoriIntervenciju')
                 ->label('🔒 Zatvori intervenciju')
                 ->color('gray')

@@ -8,10 +8,15 @@
         $brojVozilaUkupno = $this->brojVozilaUkupno;
         $brojAktivnihTimova = $this->brojAktivnihTimova;
         
+        $timoviNaTerenu = $timovi->whereIn('trenutni_status', ['polazak', 'na_mjestu']);
+        $timoviSpremni = $timovi->whereIn('trenutni_status', ['formiran', 'cekanje_u_bazi']);
+        $timoviPovratak = $timovi->whereIn('trenutni_status', ['povratak', 'intervencija_zavrsena', 'odmor']);
+        $timoviRaspusteni = $timovi->where('trenutni_status', 'raspusten');
+        
         $prio = match($intervencija->prioritet) {
-            'kriticna' => ['bg' => 'linear-gradient(135deg, #DC2626 0%, #991B1B 100%)', 'label' => '🔴 KRITIČNA'],
-            'visoka' => ['bg' => 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)', 'label' => '🟡 VISOKA'],
-            default => ['bg' => 'linear-gradient(135deg, #10B981 0%, #059669 100%)', 'label' => '🟢 STANDARDNA'],
+            'kriticna' => ['bg' => '#DC2626', 'bg2' => '#991B1B', 'label' => '🔴 KRITIČNA'],
+            'visoka' => ['bg' => '#F59E0B', 'bg2' => '#D97706', 'label' => '🟡 VISOKA'],
+            default => ['bg' => '#10B981', 'bg2' => '#059669', 'label' => '🟢 STANDARDNA'],
         };
         $statusLabel = match($intervencija->status) {
             'aktivna' => '🔥 AKTIVNA',
@@ -21,295 +26,284 @@
         };
     @endphp
 
-    <div>
-        {{-- ===== HEADER ===== --}}
-        <div style="background: {{ $prio['bg'] }}; color: white; padding: 20px 24px; border-radius: 14px; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.2); margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: start; gap: 20px; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 250px;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-                        <span style="font-size: 11px; font-weight: 800; background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 4px; letter-spacing: 0.5px;">
-                            {{ $prio['label'] }}
-                        </span>
-                        <span style="font-size: 11px; font-weight: 800; background: rgba(0,0,0,0.3); padding: 4px 10px; border-radius: 4px;">
-                            {{ $statusLabel }}
-                        </span>
-                    </div>
-                    <div style="font-size: 24px; font-weight: 900; line-height: 1.2;">{{ $intervencija->naziv }}</div>
-                    <div style="font-size: 13px; opacity: 0.9; margin-top: 6px;">
-                        <strong>#{{ $intervencija->broj }}</strong> 
-                        • 📍 {{ $intervencija->adresa ?? '—' }}
-                        • {{ $intervencija->jls?->naziv ?? '—' }}
-                    </div>
-                    <div style="font-size: 12px; opacity: 0.85; margin-top: 4px;">
-                        Otvorena: {{ $intervencija->vrijeme_otvaranja->format('d.m.Y H:i') }}
-                        • Traje: {{ $intervencija->vrijeme_otvaranja->diffForHumans(null, true, true) }}
-                    </div>
-                </div>
+    <style>
+        .fo-card { transition: all 0.2s; }
+        .fo-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .fo-btn { transition: all 0.15s; cursor: pointer; }
+        .fo-btn:hover { transform: translateY(-1px); }
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+    </style>
 
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <div style="background: rgba(255,255,255,0.15); padding: 10px 16px; border-radius: 8px; min-width: 80px; text-align: center;">
-                        <div style="font-size: 26px; font-weight: 900; line-height: 1;">{{ $brojAktivnihTimova }}</div>
-                        <div style="font-size: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Timova</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.15); padding: 10px 16px; border-radius: 8px; min-width: 80px; text-align: center;">
-                        <div style="font-size: 26px; font-weight: 900; line-height: 1;">{{ $brojClanovaUkupno }}</div>
-                        <div style="font-size: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Vatrogasaca</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.15); padding: 10px 16px; border-radius: 8px; min-width: 80px; text-align: center;">
-                        <div style="font-size: 26px; font-weight: 900; line-height: 1;">{{ $brojVozilaUkupno }}</div>
-                        <div style="font-size: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Vozila</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.15); padding: 10px 16px; border-radius: 8px; min-width: 80px; text-align: center;">
-                        <div style="font-size: 26px; font-weight: 900; line-height: 1;">{{ $dojaveVezane->count() }}</div>
-                        <div style="font-size: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Dojava</div>
-                    </div>
+    <div style="position: sticky; top: 0; z-index: 10; background: linear-gradient(135deg, {{ $prio['bg'] }} 0%, {{ $prio['bg2'] }} 100%); color: white; padding: 14px 20px; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+            
+            <div style="flex: 1; min-width: 280px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;">
+                    <span style="font-size: 10px; font-weight: 800; background: rgba(255,255,255,0.2); padding: 3px 8px; border-radius: 4px;">
+                        {{ $prio['label'] }}
+                    </span>
+                    <span style="font-size: 10px; font-weight: 800; background: rgba(0,0,0,0.3); padding: 3px 8px; border-radius: 4px;">
+                        {{ $statusLabel }}
+                    </span>
+                    <span style="font-size: 11px; opacity: 0.85;">
+                        #{{ $intervencija->broj }} • Traje: {{ $intervencija->vrijeme_otvaranja->diffForHumans(null, true, true) }}
+                    </span>
+                </div>
+                <div style="font-size: 18px; font-weight: 800; line-height: 1.2;">{{ $intervencija->naziv }}</div>
+                <div style="font-size: 11px; opacity: 0.85; margin-top: 2px;">
+                    📍 {{ \Illuminate\Support\Str::limit($intervencija->adresa ?? '—', 60) }}
+                    • {{ $intervencija->jls?->naziv ?? '—' }}
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 6px;">
+                <div style="background: rgba(255,255,255,0.18); padding: 6px 12px; border-radius: 8px; min-width: 60px; text-align: center;">
+                    <div style="font-size: 20px; font-weight: 900; line-height: 1;">{{ $brojAktivnihTimova }}</div>
+                    <div style="font-size: 9px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Timova</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.18); padding: 6px 12px; border-radius: 8px; min-width: 60px; text-align: center;">
+                    <div style="font-size: 20px; font-weight: 900; line-height: 1;">{{ $brojClanovaUkupno }}</div>
+                    <div style="font-size: 9px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Ljudi</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.18); padding: 6px 12px; border-radius: 8px; min-width: 60px; text-align: center;">
+                    <div style="font-size: 20px; font-weight: 900; line-height: 1;">{{ $brojVozilaUkupno }}</div>
+                    <div style="font-size: 9px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Vozila</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.18); padding: 6px 12px; border-radius: 8px; min-width: 60px; text-align: center;">
+                    <div style="font-size: 20px; font-weight: 900; line-height: 1;">{{ $dojaveVezane->count() }}</div>
+                    <div style="font-size: 9px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">Dojava</div>
                 </div>
             </div>
         </div>
+    </div>
 
-        {{-- ===== GLAVNI LAYOUT ===== --}}
-        <div style="display: grid; grid-template-columns: 1fr 360px; gap: 20px;">
-            
-            <div>
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-                    <div style="font-size: 18px; font-weight: 900; color: #111827; display: flex; align-items: center; gap: 10px;">
-                        🚒 Timovi na intervenciji
-                        <span style="background: #FEE2E2; color: #991B1B; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 700;">
-                            {{ $timovi->count() }}
-                        </span>
+    <div style="display: grid; grid-template-columns: 1fr 340px; gap: 16px; padding-bottom: 100px;">
+        
+        <div>
+            @if($timovi->isEmpty())
+                <div style="background: white; border: 2px dashed #D1D5DB; border-radius: 14px; padding: 60px 30px; text-align: center;">
+                    <div style="font-size: 64px; margin-bottom: 14px;">🚒</div>
+                    <div style="font-size: 20px; font-weight: 800; color: #374151; margin-bottom: 8px;">
+                        Spremni za rad
                     </div>
-                    <div style="font-size: 12px; color: #6B7280;">Gumb "➕ Novi tim" na vrhu</div>
+                    <div style="font-size: 14px; color: #6B7280; max-width: 400px; margin: 0 auto 24px auto;">
+                        Klikni zeleni gumb dolje desno da formiraš prvi tim.
+                    </div>
+                    <div style="font-size: 36px;">↘</div>
                 </div>
-
-                @if($timovi->isEmpty())
-                    <div style="background: #F9FAFB; border: 2px dashed #D1D5DB; border-radius: 14px; padding: 50px 30px; text-align: center;">
-                        <div style="font-size: 56px; margin-bottom: 14px;">🚒</div>
-                        <div style="font-size: 18px; font-weight: 700; color: #374151; margin-bottom: 8px;">
-                            Još nema formiranih timova
+            @else
+                @if($timoviNaTerenu->isNotEmpty())
+                    <div style="margin-bottom: 20px;">
+                        <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #DC2626; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            🔥 Na terenu
+                            <span style="background: #FEE2E2; color: #991B1B; padding: 2px 8px; border-radius: 10px; font-size: 11px;">{{ $timoviNaTerenu->count() }}</span>
                         </div>
-                        <div style="font-size: 14px; color: #6B7280; max-width: 400px; margin: 0 auto;">
-                            Klikni <strong>"➕ Novi tim"</strong> na vrhu da formiraš prvi tim.
-                        </div>
-                    </div>
-                @else
-                    <div style="display: flex; flex-direction: column; gap: 16px;">
-                        @foreach($timovi as $tim)
-                            @php
-                                $statusBoja = match($tim->trenutni_status) {
-                                    'formiran' => ['bg' => '#FEF3C7', 'border' => '#F59E0B', 'text' => '#92400E', 'label' => '🆕 FORMIRAN'],
-                                    'polazak' => ['bg' => '#DBEAFE', 'border' => '#3B82F6', 'text' => '#1E40AF', 'label' => '🚒 POLAZAK'],
-                                    'na_mjestu' => ['bg' => '#FEE2E2', 'border' => '#DC2626', 'text' => '#991B1B', 'label' => '📍 NA MJESTU'],
-                                    'intervencija_zavrsena' => ['bg' => '#D1FAE5', 'border' => '#10B981', 'text' => '#065F46', 'label' => '✅ ZAVRŠILI'],
-                                    'povratak' => ['bg' => '#E0E7FF', 'border' => '#6366F1', 'text' => '#3730A3', 'label' => '↩️ POVRATAK'],
-                                    'odmor' => ['bg' => '#F3F4F6', 'border' => '#6B7280', 'text' => '#374151', 'label' => '😴 ODMOR'],
-                                    'cekanje_u_bazi' => ['bg' => '#F3F4F6', 'border' => '#9CA3AF', 'text' => '#374151', 'label' => '🏠 U BAZI'],
-                                    'raspusten' => ['bg' => '#F3F4F6', 'border' => '#9CA3AF', 'text' => '#6B7280', 'label' => '🚪 RASPUŠTEN'],
-                                    default => ['bg' => '#F3F4F6', 'border' => '#6B7280', 'text' => '#374151', 'label' => strtoupper($tim->trenutni_status)],
-                                };
-                                $jeRaspusten = $tim->trenutni_status === 'raspusten';
-                            @endphp
-                            
-                            <div style="background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #E5E7EB; border-left: 6px solid {{ $statusBoja['border'] }}; overflow: hidden; {{ $jeRaspusten ? 'opacity: 0.5;' : '' }}">
-                                
-                                <div style="padding: 14px 16px; background: {{ $statusBoja['bg'] }}; border-bottom: 1px solid #E5E7EB;">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-                                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                                            <span style="font-size: 18px; font-weight: 900; color: #111827;">{{ $tim->naziv }}</span>
-                                            <span style="font-size: 11px; font-weight: 800; background: {{ $statusBoja['border'] }}; color: white; padding: 4px 10px; border-radius: 4px;">
-                                                {{ $statusBoja['label'] }}
-                                            </span>
-                                        </div>
-                                        <a href="/admin/tims/{{ $tim->id }}/edit" 
-                                           style="background: white; color: #374151; border: 1px solid #D1D5DB; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none;">
-                                            ⚙ Upravljaj
-                                        </a>
-                                    </div>
-                                    <div style="font-size: 12px; color: {{ $statusBoja['text'] }}; margin-top: 6px;">
-                                        🏠 <strong>{{ $tim->bazaPostrojba?->naziv ?? '—' }}</strong>
-                                        • 👑 {{ $tim->zapovjednik?->puno_ime ?? '—' }}
-                                        • Formiran: {{ $tim->vrijeme_formiranja->format('H:i') }} ({{ $tim->vrijeme_formiranja->diffForHumans(null, true, true) }})
-                                    </div>
-                                </div>
-
-                                <div style="padding: 14px 16px;">
-                                    @if($tim->zadatak)
-                                        <div style="background: #FFFBEB; border-left: 3px solid #F59E0B; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #92400E; margin-bottom: 12px;">
-                                            <strong>Zadatak:</strong> {{ $tim->zadatak }}
-                                        </div>
-                                    @endif
-
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
-                                        <div style="background: #F9FAFB; border-radius: 6px; padding: 10px;">
-                                            <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6B7280; margin-bottom: 6px; letter-spacing: 0.5px;">
-                                                🧑‍🚒 Članovi ({{ $tim->trenutniClanovi->count() }})
-                                            </div>
-                                            @if($tim->trenutniClanovi->isEmpty())
-                                                <div style="font-size: 11px; color: #9CA3AF; font-style: italic;">Bez članova</div>
-                                            @else
-                                                <div style="display: flex; flex-direction: column; gap: 3px;">
-                                                    @foreach($tim->trenutniClanovi as $clan)
-                                                        <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #374151;">
-                                                            <span>{{ $clan->uloga === 'zapovjednik' ? '👑' : '👤' }}</span>
-                                                            <span style="font-weight: 600;">{{ $clan->vatrogasac->prezime }} {{ $clan->vatrogasac->ime }}</span>
-                                                            <span style="color: #9CA3AF; font-size: 10px;">{{ $clan->vatrogasac->postrojba?->skraceni_naziv ?? '?' }}</span>
-                                                        </div>
-                                                    @endforeach
-                                                </div>
-                                            @endif
-                                        </div>
-
-                                        <div style="background: #FFFBEB; border-radius: 6px; padding: 10px;">
-                                            <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #92400E; margin-bottom: 6px; letter-spacing: 0.5px;">
-                                                🚒 Vozila ({{ $tim->trenutnaVozila->count() }})
-                                            </div>
-                                            @if($tim->trenutnaVozila->isEmpty())
-                                                <div style="font-size: 11px; color: #9CA3AF; font-style: italic;">Bez vozila</div>
-                                            @else
-                                                <div style="display: flex; flex-direction: column; gap: 3px;">
-                                                    @foreach($tim->trenutnaVozila as $tv)
-                                                        <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #374151;">
-                                                            <span>🚒</span>
-                                                            <span style="font-weight: 700;">{{ $tv->vozilo->registracija ?? '?' }}</span>
-                                                            <span style="color: #9CA3AF; font-size: 10px;">{{ $tv->vozilo->postrojba?->skraceni_naziv ?? '?' }}</span>
-                                                        </div>
-                                                    @endforeach
-                                                </div>
-                                            @endif
-                                        </div>
-                                    </div>
-
-                                    @if(!$jeRaspusten)
-                                        <div style="display: flex; gap: 6px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid #F3F4F6;">
-                                            @if(in_array($tim->trenutni_status, ['formiran', 'cekanje_u_bazi', 'odmor']))
-                                                <button wire:click="timPolazak({{ $tim->id }})"
-                                                        style="background: #3B82F6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">
-                                                    🚒 Polazak
-                                                </button>
-                                            @endif
-
-                                            @if($tim->trenutni_status === 'polazak')
-                                                <button wire:click="timNaMjestu({{ $tim->id }})"
-                                                        style="background: #DC2626; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">
-                                                    📍 Na mjestu
-                                                </button>
-                                            @endif
-
-                                            @if($tim->trenutni_status === 'na_mjestu')
-                                                <button wire:click="timZavrsili({{ $tim->id }})"
-                                                        style="background: #10B981; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">
-                                                    ✅ Završili
-                                                </button>
-                                            @endif
-
-                                            @if(in_array($tim->trenutni_status, ['intervencija_zavrsena', 'na_mjestu']))
-                                                <button wire:click="timPovratak({{ $tim->id }})"
-                                                        style="background: #6366F1; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">
-                                                    ↩️ Povratak
-                                                </button>
-                                            @endif
-
-                                            <a href="/admin/tims/{{ $tim->id }}/edit"
-                                               style="background: #F3F4F6; color: #374151; border: 1px solid #D1D5DB; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; margin-left: auto;">
-                                                ➕ Dodaj članove / vozila
-                                            </a>
-                                        </div>
-                                    @endif
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
-
-                @if($dojaveVezane->isNotEmpty())
-                    <div style="margin-top: 24px;">
-                        <div style="font-size: 16px; font-weight: 800; color: #111827; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
-                            📞 Dojave vezane na intervenciju
-                            <span style="background: #FEE2E2; color: #991B1B; padding: 2px 10px; border-radius: 10px; font-size: 12px;">
-                                {{ $dojaveVezane->count() }}
-                            </span>
-                        </div>
-                        <div style="display: flex; flex-direction: column; gap: 6px;">
-                            @foreach($dojaveVezane as $d)
-                                <a href="/admin/dojavas/{{ $d->id }}/edit" style="text-decoration: none; color: inherit; background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; gap: 10px;">
-                                    <span style="font-size: 12px; font-weight: 700; color: #DC2626;">#{{ $d->broj_dojave }}</span>
-                                    <span style="font-size: 12px; color: #374151;">{{ \Illuminate\Support\Str::limit($d->adresa, 60) }}</span>
-                                    <span style="font-size: 11px; color: #6B7280; margin-left: auto;">{{ $d->vrijeme_zaprimanja->format('H:i') }}</span>
-                                </a>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            @foreach($timoviNaTerenu as $tim)
+                                @include('filament.admin.resources.intervencijas.pages._tim-kartica', ['tim' => $tim])
                             @endforeach
                         </div>
                     </div>
                 @endif
-            </div>
 
-            <div style="background: white; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #E5E7EB; height: fit-content; position: sticky; top: 20px;">
-                <div style="font-size: 14px; font-weight: 800; color: #111827; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #F3F4F6; display: flex; align-items: center; gap: 6px;">
-                    📋 Timeline intervencije
-                    <span style="background: #FEE2E2; color: #991B1B; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;">
-                        {{ $timeline->count() }}
-                    </span>
-                </div>
-
-                @if($timeline->isEmpty())
-                    <div style="text-align: center; padding: 30px 10px; color: #9CA3AF;">
-                        <div style="font-size: 32px; margin-bottom: 6px;">📜</div>
-                        <div style="font-size: 12px;">Timeline će se popunjavati</div>
-                    </div>
-                @else
-                    <div style="display: flex; flex-direction: column; gap: 6px; max-height: 700px; overflow-y: auto;">
-                        @foreach($timeline as $log)
-                            @php
-                                $tipIkona = match($log->status) {
-                                    'formiran' => '🆕',
-                                    'polazak' => '🚒',
-                                    'na_mjestu' => '📍',
-                                    'intervencija_zavrsena' => '✅',
-                                    'povratak' => '↩️',
-                                    'odmor' => '😴',
-                                    'cekanje_u_bazi' => '🏠',
-                                    'raspusten' => '🚪',
-                                    default => '📌',
-                                };
-                            @endphp
-                            <div style="border-left: 3px solid #DC2626; padding: 7px 10px; background: #FEF2F2; border-radius: 4px;">
-                                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
-                                    <span style="font-size: 13px;">{{ $tipIkona }}</span>
-                                    <span style="font-size: 10px; font-weight: 800; color: #991B1B; text-transform: uppercase;">
-                                        {{ str_replace('_', ' ', $log->status) }}
-                                    </span>
-                                    <span style="font-size: 10px; color: #6B7280; margin-left: auto;">
-                                        {{ $log->vrijeme->format('d.m. H:i') }}
-                                    </span>
-                                </div>
-                                <div style="font-size: 11px; color: #111827; font-weight: 600;">
-                                    {{ $log->tim?->naziv ?? 'Tim' }}
-                                </div>
-                                @if($log->napomena)
-                                    <div style="font-size: 10px; color: #6B7280; margin-top: 2px;">{{ $log->napomena }}</div>
-                                @endif
-                                @if($log->autor)
-                                    <div style="font-size: 9px; color: #9CA3AF; margin-top: 3px;">— {{ $log->autor->name }}</div>
-                                @endif
-                            </div>
-                        @endforeach
+                @if($timoviSpremni->isNotEmpty())
+                    <div style="margin-bottom: 20px;">
+                        <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #F59E0B; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            ⏳ Spremni za polazak
+                            <span style="background: #FEF3C7; color: #92400E; padding: 2px 8px; border-radius: 10px; font-size: 11px;">{{ $timoviSpremni->count() }}</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            @foreach($timoviSpremni as $tim)
+                                @include('filament.admin.resources.intervencijas.pages._tim-kartica', ['tim' => $tim])
+                            @endforeach
+                        </div>
                     </div>
                 @endif
-            </div>
+
+                @if($timoviPovratak->isNotEmpty())
+                    <div style="margin-bottom: 20px;">
+                        <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #10B981; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            ✅ Završili / povratak
+                            <span style="background: #D1FAE5; color: #065F46; padding: 2px 8px; border-radius: 10px; font-size: 11px;">{{ $timoviPovratak->count() }}</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            @foreach($timoviPovratak as $tim)
+                                @include('filament.admin.resources.intervencijas.pages._tim-kartica', ['tim' => $tim])
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
+                @if($timoviRaspusteni->isNotEmpty())
+                    <details style="margin-bottom: 20px;">
+                        <summary style="cursor: pointer; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #6B7280; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            🚪 Raspušteni
+                            <span style="background: #F3F4F6; color: #6B7280; padding: 2px 8px; border-radius: 10px; font-size: 11px;">{{ $timoviRaspusteni->count() }}</span>
+                            <span style="margin-left: auto; font-size: 11px; color: #9CA3AF;">▼ klikni za prikaz</span>
+                        </summary>
+                        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+                            @foreach($timoviRaspusteni as $tim)
+                                @include('filament.admin.resources.intervencijas.pages._tim-kartica', ['tim' => $tim])
+                            @endforeach
+                        </div>
+                    </details>
+                @endif
+            @endif
+
+            @if($dojaveVezane->isNotEmpty())
+                <div style="margin-top: 24px; background: white; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #E5E7EB;">
+                    <div style="font-size: 13px; font-weight: 800; color: #111827; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        📞 Dojave vezane
+                        <span style="background: #FEE2E2; color: #991B1B; padding: 2px 8px; border-radius: 10px; font-size: 11px;">
+                            {{ $dojaveVezane->count() }}
+                        </span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        @foreach($dojaveVezane as $d)
+                            @php
+                                $prioBoja = match($d->prioritet) {
+                                    'kriticna' => '#DC2626',
+                                    'visoka' => '#F59E0B',
+                                    default => '#10B981',
+                                };
+                            @endphp
+                            <a href="/admin/dojavas/{{ $d->id }}/edit" 
+                               class="fo-btn"
+                               style="text-decoration: none; color: inherit; background: #F9FAFB; border-left: 3px solid {{ $prioBoja }}; border-radius: 6px; padding: 8px 12px; display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 12px; font-weight: 700; color: {{ $prioBoja }};">#{{ $d->broj_dojave }}</span>
+                                <span style="font-size: 12px; color: #374151;">{{ \Illuminate\Support\Str::limit($d->adresa, 50) }}</span>
+                                <span style="font-size: 10px; color: #6B7280; margin-left: auto;">{{ $d->vrijeme_zaprimanja->format('H:i') }}</span>
+                            </a>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
         </div>
 
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #F3F4F6;">
-            <details>
-                <summary style="cursor: pointer; font-size: 14px; font-weight: 700; color: #374151; padding: 10px 0;">
-                    ⚙ Uredi podatke intervencije
-                </summary>
-                <div style="margin-top: 16px;">
-                    <form wire:submit="save">
-                        {{ $this->form }}
-                        <div style="display: flex; gap: 12px; margin-top: 20px;">
-                            <x-filament::button type="submit">Spremi izmjene</x-filament::button>
-                        </div>
-                    </form>
+        <div style="background: white; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #E5E7EB; height: fit-content; position: sticky; top: 110px;">
+            <div style="font-size: 13px; font-weight: 800; color: #111827; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #F3F4F6; display: flex; align-items: center; gap: 6px;">
+                📋 Timeline
+                <span style="background: #FEE2E2; color: #991B1B; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700;">
+                    {{ $timeline->count() }}
+                </span>
+            </div>
+
+            @if($timeline->isEmpty())
+                <div style="text-align: center; padding: 30px 10px; color: #9CA3AF;">
+                    <div style="font-size: 32px; margin-bottom: 6px;">📜</div>
+                    <div style="font-size: 11px;">Timeline će se popunjavati</div>
                 </div>
-            </details>
+            @else
+                <div style="display: flex; flex-direction: column; gap: 5px; max-height: calc(100vh - 200px); overflow-y: auto;">
+                    @foreach($timeline as $log)
+                        @php
+                            $tipIkona = match($log->status) {
+                                'formiran' => '🆕',
+                                'polazak' => '🚒',
+                                'na_mjestu' => '📍',
+                                'intervencija_zavrsena' => '✅',
+                                'povratak' => '↩️',
+                                'odmor' => '😴',
+                                'cekanje_u_bazi' => '🏠',
+                                'raspusten' => '🚪',
+                                default => '📌',
+                            };
+                            $boja = match($log->status) {
+                                'na_mjestu' => '#DC2626',
+                                'polazak' => '#3B82F6',
+                                'intervencija_zavrsena' => '#10B981',
+                                'povratak' => '#6366F1',
+                                default => '#6B7280',
+                            };
+                        @endphp
+                        <div style="border-left: 3px solid {{ $boja }}; padding: 6px 10px; background: #F9FAFB; border-radius: 4px;">
+                            <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 2px;">
+                                <span style="font-size: 12px;">{{ $tipIkona }}</span>
+                                <span style="font-size: 9px; font-weight: 800; color: {{ $boja }}; text-transform: uppercase;">
+                                    {{ str_replace('_', ' ', $log->status) }}
+                                </span>
+                                <span style="font-size: 10px; color: #6B7280; margin-left: auto;">
+                                    {{ $log->vrijeme->format('H:i') }}
+                                </span>
+                            </div>
+                            <div style="font-size: 11px; color: #111827; font-weight: 700;">
+                                {{ $log->tim?->naziv ?? 'Tim' }}
+                            </div>
+                            @if($log->autor)
+                                <div style="font-size: 9px; color: #9CA3AF; margin-top: 2px;">— {{ $log->autor->name }}</div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            @endif
         </div>
+    </div>
+
+    <div style="position: fixed; bottom: 24px; right: 24px; z-index: 20; display: flex; flex-direction: column; gap: 10px; align-items: flex-end;">
+        
+        <button type="button" onclick="window.fireopsKlikGumb('dodajDojavu')"
+                title="Dodaj postojeću dojavu"
+                style="background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%); color: white; border: none; padding: 14px 18px; border-radius: 50px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4); display: flex; align-items: center; gap: 8px;">
+            📞 Dodaj dojavu
+        </button>
+
+        <button type="button" onclick="window.fireopsKlikGumb('posaljiTim')"
+                title="Pošalji postojeći tim"
+                style="background: linear-gradient(135deg, #3B82F6 0%, #1E40AF 100%); color: white; border: none; padding: 14px 18px; border-radius: 50px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4); display: flex; align-items: center; gap: 8px;">
+            🚒 Pošalji tim
+        </button>
+
+        <button type="button" onclick="window.fireopsKlikGumb('noviTim')"
+                title="Formiraj novi tim"
+                style="background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white; border: none; padding: 18px 24px; border-radius: 50px; font-size: 15px; font-weight: 800; cursor: pointer; box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4); display: flex; align-items: center; gap: 8px;">
+            ➕ Novi tim
+        </button>
+
+        <button type="button" onclick="window.scrollTo({top: 0, behavior: 'smooth'})"
+                title="Vrh stranice"
+                style="background: rgba(0,0,0,0.7); color: white; border: none; width: 44px; height: 44px; border-radius: 50%; font-size: 18px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.2);">
+            ↑
+        </button>
+    </div>
+
+    @push('scripts')
+        <script>
+            window.fireopsKlikGumb = function(akcija) {
+                const gumbi = document.querySelectorAll('button');
+                for (const g of gumbi) {
+                    const txt = (g.innerText || g.textContent || '').toLowerCase();
+                    if (akcija === 'noviTim' && txt.includes('novi tim')) {
+                        g.click();
+                        return;
+                    }
+                    if (akcija === 'dodajDojavu' && txt.includes('dodaj dojavu')) {
+                        g.click();
+                        return;
+                    }
+                    if (akcija === 'posaljiTim' && txt.includes('pošalji tim')) {
+                        g.click();
+                        return;
+                    }
+                }
+                console.warn('FireOps: gumb nije pronaden za akciju', akcija);
+            };
+        </script>
+    @endpush
+
+    <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #F3F4F6;">
+        <details>
+            <summary style="cursor: pointer; font-size: 13px; font-weight: 700; color: #6B7280; padding: 8px 0;">
+                ⚙ Uredi podatke intervencije
+            </summary>
+            <div style="margin-top: 16px;">
+                <form wire:submit="save">
+                    {{ $this->form }}
+                    <div style="display: flex; gap: 12px; margin-top: 20px;">
+                        <x-filament::button type="submit">Spremi izmjene</x-filament::button>
+                    </div>
+                </form>
+            </div>
+        </details>
     </div>
 </x-filament-panels::page>
