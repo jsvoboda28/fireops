@@ -126,10 +126,10 @@
                             🗺 Operativna karta
                         </a>
                         
-                        <a href="/admin/dojavas/create"
-                           style="background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%); color: white; padding: 7px 12px; border-radius: 7px; text-decoration: none; font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px;">
+                        <button wire:click="otvoriNovuDojavu"
+                                style="background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%); color: white; padding: 7px 12px; border: none; border-radius: 7px; font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px; cursor: pointer;">
                             ➕ Nova dojava
-                        </a>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -139,35 +139,43 @@
                 <div style="background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); border: 1px solid #E2E8F0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     
                     <div style="display: flex; border-bottom: 1px solid #E2E8F0; flex-shrink: 0; background: #F8FAFC;">
-                        <button class="fo-tab-btn active" id="tab-sve" onclick="window.fireopsPostaviTab('sve')">
+                        <button wire:click="postaviTab('sve')" class="fo-tab-btn {{ $aktivniTab === 'sve' ? 'active' : '' }}">
                             📋 SVE ({{ $brojDojava + $brojIntervencija }})
                         </button>
-                        <button class="fo-tab-btn" id="tab-dojave" onclick="window.fireopsPostaviTab('dojave')">
+                        <button wire:click="postaviTab('dojave')" class="fo-tab-btn {{ $aktivniTab === 'dojave' ? 'active' : '' }}">
                             📞 Dojave ({{ $brojDojava }})
                         </button>
-                        <button class="fo-tab-btn" id="tab-intervencije" onclick="window.fireopsPostaviTab('intervencije')">
+                        <button wire:click="postaviTab('intervencije')" class="fo-tab-btn {{ $aktivniTab === 'intervencije' ? 'active' : '' }}">
                             🔥 Intervencije ({{ $brojIntervencija }})
                         </button>
                     </div>
                     
                     <div style="padding: 10px 12px; border-bottom: 1px solid #E2E8F0; flex-shrink: 0;">
-                        <input type="text" id="master-search" placeholder="🔍 Traži po adresi, broju, JLS..." class="fo-input" style="font-size: 12px; margin-bottom: 8px;">
+                        <input type="text" 
+                               wire:model.live.debounce.300ms="pretraga"
+                               placeholder="🔍 Traži po adresi, broju, JLS..." 
+                               class="fo-input" 
+                               style="font-size: 12px; margin-bottom: 8px;">
                         <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                            <button class="fo-filter-btn active" data-filter="prio" data-value="sve">SVE</button>
-                            <button class="fo-filter-btn" data-filter="prio" data-value="kriticna">🔴 KRIT</button>
-                            <button class="fo-filter-btn" data-filter="prio" data-value="visoka">🟡 VIS</button>
-                            <button class="fo-filter-btn" data-filter="prio" data-value="standardna">🟢 STD</button>
+                            <button wire:click="postaviPrio('sve')" class="fo-filter-btn {{ $aktivniPrio === 'sve' ? 'active' : '' }}">SVE</button>
+                            <button wire:click="postaviPrio('kriticna')" class="fo-filter-btn {{ $aktivniPrio === 'kriticna' ? 'active' : '' }}">🔴 KRIT</button>
+                            <button wire:click="postaviPrio('visoka')" class="fo-filter-btn {{ $aktivniPrio === 'visoka' ? 'active' : '' }}">🟡 VIS</button>
+                            <button wire:click="postaviPrio('standardna')" class="fo-filter-btn {{ $aktivniPrio === 'standardna' ? 'active' : '' }}">🟢 STD</button>
                         </div>
                     </div>
                     
                     <div class="fo-scroll" id="master-list" style="overflow-y: auto; flex: 1;">
                         @php
                             $sviItems = collect();
-                            foreach($intervencije as $int) {
-                                $sviItems->push(['tip' => 'intervencija', 'data' => $int, 'prioritet' => $int->prioritet, 'vrijeme' => $int->vrijeme_otvaranja]);
+                            if ($aktivniTab === 'sve' || $aktivniTab === 'intervencije') {
+                                foreach($intervencije as $int) {
+                                    $sviItems->push(['tip' => 'intervencija', 'data' => $int, 'prioritet' => $int->prioritet, 'vrijeme' => $int->vrijeme_otvaranja]);
+                                }
                             }
-                            foreach($dojave as $d) {
-                                $sviItems->push(['tip' => 'dojava', 'data' => $d, 'prioritet' => $d->prioritet, 'vrijeme' => $d->vrijeme_zaprimanja]);
+                            if ($aktivniTab === 'sve' || $aktivniTab === 'dojave') {
+                                foreach($dojave as $d) {
+                                    $sviItems->push(['tip' => 'dojava', 'data' => $d, 'prioritet' => $d->prioritet, 'vrijeme' => $d->vrijeme_zaprimanja]);
+                                }
                             }
                             $sviItems = $sviItems->sortBy([
                                 ['prioritet', 'asc'],
@@ -197,10 +205,8 @@
                                     };
                                 @endphp
                                 <div wire:click="odaberi('dojava', {{ $data->id }})"
-                                     class="fo-row dispatch-item {{ $aktivan ? 'active' : '' }}"
-                                     data-tip="dojava"
-                                     data-prioritet="{{ $data->prioritet }}"
-                                     data-search="{{ strtolower($data->adresa . ' ' . $data->broj_dojave . ' ' . ($data->jls?->naziv ?? '')) }}"
+                                     wire:key="d-{{ $data->id }}"
+                                     class="fo-row {{ $aktivan ? 'active' : '' }}"
                                      style="display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid #F1F5F9; border-left: 3px solid {{ $prio['border'] }};">
                                     
                                     <span style="font-size: 14px; width: 18px; text-align: center; flex-shrink: 0;">{{ $tipIkona }}</span>
@@ -229,10 +235,8 @@
                                     $brojLjudi = $aktivniTimovi->sum(fn($t) => $t->trenutniClanovi->count());
                                 @endphp
                                 <div wire:click="odaberi('intervencija', {{ $data->id }})"
-                                     class="fo-row dispatch-item {{ $aktivan ? 'active' : '' }}"
-                                     data-tip="intervencija"
-                                     data-prioritet="{{ $data->prioritet }}"
-                                     data-search="{{ strtolower($data->naziv . ' ' . $data->broj . ' ' . ($data->jls?->naziv ?? '')) }}"
+                                     wire:key="i-{{ $data->id }}"
+                                     class="fo-row {{ $aktivan ? 'active' : '' }}"
                                      style="display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid #F1F5F9; border-left: 3px solid {{ $prio['border'] }};">
                                     
                                     <span style="font-size: 8px; font-weight: 800; background: {{ $prio['badgeBg'] }}; color: white; padding: 2px 5px; border-radius: 3px; flex-shrink: 0;">{{ $prio['badge'] }}</span>
@@ -260,7 +264,8 @@
                     </div>
                 </div>
 
-                <div style="background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); border: 1px solid #E2E8F0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+                <div style="background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); border: 1px solid #E2E8F0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;"
+                     wire:key="detalji-{{ $odabrano ?? 'prazno' }}">
                     
                     @if($odabranaDojava)
                         @include('filament.admin.pages._dispatch-dojava-detail', ['dojava' => $odabranaDojava])
@@ -274,10 +279,10 @@
                                 Klikni na bilo koju dojavu ili intervenciju iz popisa za prikaz detalja i akcija.
                             </div>
                             <div style="margin-top: 32px; display: flex; gap: 8px;">
-                                <a href="/admin/dojavas/create" 
-                                   style="background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%); color: white; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 800; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);">
+                                <button wire:click="otvoriNovuDojavu"
+                                        style="background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%); color: white; padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 800; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); cursor: pointer;">
                                     ➕ Otvori novu dojavu
-                                </a>
+                                </button>
                                 <a href="/admin/operativa" target="_blank"
                                    style="background: white; color: #475569; border: 1px solid #E2E8F0; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-size: 13px; font-weight: 800;">
                                     🗺 Operativna karta
@@ -348,6 +353,12 @@
         @if($aktivniModal === 'dodajDojavu')
             @include('filament.admin.pages._dispatch-modal-dodaj-dojavu')
         @endif
+        @if($aktivniModal === 'upravljajTimom')
+            @include('filament.admin.pages._dispatch-modal-upravljaj-timom', ['upravljaniTim' => $upravljaniTim])
+        @endif
+        @if($aktivniModal === 'novaDojava' || $aktivniModal === 'urediDojavu')
+            @include('filament.admin.pages._dispatch-modal-nova-dojava')
+        @endif
     </div>
 
     @push('scripts')
@@ -362,59 +373,6 @@
                 upd();
                 setInterval(upd, 1000);
 
-                const filterState = { tab: 'sve', prio: 'sve', search: '' };
-
-                const filtriraj = () => {
-                    const items = document.querySelectorAll('.dispatch-item');
-                    items.forEach(item => {
-                        const tip = item.getAttribute('data-tip');
-                        const prio = item.getAttribute('data-prioritet');
-                        const search = item.getAttribute('data-search') || '';
-                        
-                        const tabMatch = filterState.tab === 'sve' 
-                            || (filterState.tab === 'dojave' && tip === 'dojava')
-                            || (filterState.tab === 'intervencije' && tip === 'intervencija');
-                        const prioMatch = filterState.prio === 'sve' || filterState.prio === prio;
-                        const searchMatch = !filterState.search || search.includes(filterState.search);
-                        
-                        item.style.display = (tabMatch && prioMatch && searchMatch) ? '' : 'none';
-                    });
-                };
-
-                window.fireopsPostaviTab = function(tab) {
-                    filterState.tab = tab;
-                    document.querySelectorAll('.fo-tab-btn').forEach(b => b.classList.remove('active'));
-                    const btn = document.getElementById('tab-' + tab);
-                    if (btn) btn.classList.add('active');
-                    filtriraj();
-                };
-
-                document.querySelectorAll('.fo-filter-btn').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        const filter = btn.getAttribute('data-filter');
-                        const value = btn.getAttribute('data-value');
-                        document.querySelectorAll('.fo-filter-btn[data-filter="' + filter + '"]').forEach(b => b.classList.remove('active'));
-                        btn.classList.add('active');
-                        filterState[filter] = value;
-                        filtriraj();
-                    });
-                });
-
-                const searchInput = document.getElementById('master-search');
-                if (searchInput) {
-                    searchInput.addEventListener('input', (e) => {
-                        filterState.search = e.target.value.toLowerCase().trim();
-                        filtriraj();
-                    });
-                }
-
-                window.fireopsZoomirajNaMapi = function(lat, lng, naslov, tip) {
-                    if (!lat || !lng) return;
-                    const payload = { lat: parseFloat(lat), lng: parseFloat(lng), naslov, tip, timestamp: Date.now() };
-                    localStorage.setItem('fireops:zoom-mapa', JSON.stringify(payload));
-                    window.dispatchEvent(new StorageEvent('storage', { key: 'fireops:zoom-mapa', newValue: JSON.stringify(payload) }));
-                };
-
                 document.addEventListener('livewire:initialized', () => {
                     if (window.Livewire) {
                         window.Livewire.on('osvjeziMapu', () => {
@@ -423,13 +381,35 @@
                         });
                     }
                 });
+
+                window.fireopsZoomirajNaMapi = function(lat, lng, naslov, tip) {
+                    if (!lat || !lng) return;
+                    const payload = { lat: parseFloat(lat), lng: parseFloat(lng), naslov, tip, timestamp: Date.now() };
+                    localStorage.setItem('fireops:zoom-mapa', JSON.stringify(payload));
+                    window.dispatchEvent(new StorageEvent('storage', { key: 'fireops:zoom-mapa', newValue: JSON.stringify(payload) }));
+                };
+
+                window._fireopsMape = window._fireopsMape || {};
                 
                 const initMiniMapa = () => {
                     if (typeof L === 'undefined') return;
                     
+                    const trenutnoUDomu = new Set();
                     document.querySelectorAll('[id^="fo-mini-mapa-"]').forEach(el => {
-                        if (el._leaflet_initialized) return;
-                        el._leaflet_initialized = true;
+                        trenutnoUDomu.add(el.id);
+                    });
+                    
+                    Object.keys(window._fireopsMape).forEach(id => {
+                        if (!trenutnoUDomu.has(id)) {
+                            try {
+                                window._fireopsMape[id].remove();
+                            } catch(e) {}
+                            delete window._fireopsMape[id];
+                        }
+                    });
+                    
+                    document.querySelectorAll('[id^="fo-mini-mapa-"]').forEach(el => {
+                        if (window._fireopsMape[el.id]) return;
                         
                         const lat = parseFloat(el.dataset.intLat);
                         const lng = parseFloat(el.dataset.intLng);
@@ -444,7 +424,11 @@
                             return;
                         }
                         
+                        el.innerHTML = '';
+                        el._leaflet_id = undefined;
+                        
                         const mapa = L.map(el, { zoomControl: true, attributionControl: false }).setView([lat, lng], 15);
+                        window._fireopsMape[el.id] = mapa;
                         
                         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
                             maxZoom: 19,
@@ -489,18 +473,12 @@
                     });
                 };
                 
-                const probajIniMapu = () => {
-                    if (typeof L !== 'undefined') {
-                        initMiniMapa();
-                    } else {
-                        setTimeout(probajIniMapu, 200);
-                    }
-                };
+                document.addEventListener('livewire:initialized', initMiniMapa);
+                document.addEventListener('livewire:updated', initMiniMapa);
+                document.addEventListener('livewire:navigated', initMiniMapa);
                 
-                document.addEventListener('livewire:initialized', probajIniMapu);
-                document.addEventListener('livewire:updated', probajIniMapu);
-                setTimeout(probajIniMapu, 500);
-                setInterval(probajIniMapu, 2000);
+                setTimeout(initMiniMapa, 500);
+                setInterval(initMiniMapa, 2000);
             })();
         </script>
     @endpush

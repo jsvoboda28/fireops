@@ -215,7 +215,7 @@
                                 @if(in_array($tim->trenutni_status, ['intervencija_zavrsena', 'na_mjestu']))
                                     <button wire:click="timPovratak({{ $tim->id }})" style="background: #6366F1; color: white; border: none; padding: 3px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; cursor: pointer;">↩️ Povratak</button>
                                 @endif
-                                <a href="/admin/tims/{{ $tim->id }}/edit" target="_blank" style="background: #F1F5F9; color: #475569; border: 1px solid #E2E8F0; padding: 3px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; text-decoration: none; margin-left: auto;">⚙</a>
+                                <button wire:click="otvoriUpravljanjeTimom({{ $tim->id }})" style="background: #F1F5F9; color: #475569; border: 1px solid #E2E8F0; padding: 3px 7px; border-radius: 4px; font-size: 9px; font-weight: 700; cursor: pointer; margin-left: auto;" title="Upravljaj timom">⚙ Upravljaj</button>
                             </div>
                         </div>
                     @endforeach
@@ -230,15 +230,11 @@
                 @endif
             </div>
             
-            <div style="padding: 6px 10px; background: #F8FAFC; border-top: 1px solid #E2E8F0; flex-shrink: 0; display: flex; gap: 4px;">
-                <a href="/admin/intervencijas/{{ $intervencija->id }}/edit"
-                   style="flex: 1; background: white; border: 1px solid #E2E8F0; color: #475569; padding: 6px; border-radius: 5px; text-decoration: none; font-size: 10px; font-weight: 700; text-align: center;">
-                    ⚙ Puno upravljanje
-                </a>
+            <div style="padding: 6px 10px; background: #F8FAFC; border-top: 1px solid #E2E8F0; flex-shrink: 0; display: flex; gap: 4px; justify-content: flex-end;">
                 <button wire:click="zatvoriIntervenciju"
                         wire:confirm="Sigurno zatvoriti intervenciju?"
-                        style="background: white; border: 1px solid #FCA5A5; color: #DC2626; padding: 6px 12px; border-radius: 5px; font-size: 10px; font-weight: 700; cursor: pointer;">
-                    🔒 Zatvori
+                        style="background: white; border: 1px solid #FCA5A5; color: #DC2626; padding: 6px 14px; border-radius: 5px; font-size: 10px; font-weight: 700; cursor: pointer;">
+                    🔒 Zatvori intervenciju
                 </button>
             </div>
         </div>

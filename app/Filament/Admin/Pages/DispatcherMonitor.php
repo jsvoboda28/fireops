@@ -5,11 +5,14 @@ namespace App\Filament\Admin\Pages;
 use App\Models\Dojava;
 use App\Models\Intervencija;
 use App\Models\IntervencijaNapomena;
+use App\Models\KucniBroj;
+use App\Models\Naselje;
 use App\Models\Postrojba;
 use App\Models\Tim;
 use App\Models\TimClanstvo;
 use App\Models\TimRezervacija;
 use App\Models\TimStatusLog;
+use App\Models\Ulica;
 use App\Models\Vatrogasac;
 use BackedEnum;
 use Filament\Notifications\Notification;
@@ -39,18 +42,55 @@ class DispatcherMonitor extends Page
     #[Url(as: 'detalji')]
     public ?string $odabrano = null;
 
+    #[Url(as: 'tab')]
+    public string $aktivniTab = 'sve';
+
+    #[Url(as: 'prio')]
+    public string $aktivniPrio = 'sve';
+
+    #[Url(as: 'q')]
+    public string $pretraga = '';
+
     public ?string $aktivniModal = null;
     public array $modalData = [];
 
-    // ===== NAPOMENA STATE =====
+    public ?int $upravljaniTimId = null;
+    public ?int $upravljanjeNoviClanId = null;
+    public string $upravljanjeNovaUloga = 'clan';
+    public string $upravljanjeNoviZadatak = '';
+
     public string $novaNapomenaTip = 'biljeska';
     public string $novaNapomenaSadrzaj = '';
+
+    // Nova / Uredi dojava — hijerarhijska adresa (zajednički state)
+    public ?int $urediDojavaId = null;
+    public string $novaDojavaTip = 'pozar';
+    public string $novaDojavaPrioritet = 'standardna';
+    public string $novaDojavaOpis = '';
+    public string $novaDojavaStatus = 'zaprimljena';
+    
+    public string $novaDojavaNaseljePretraga = '';
+    public ?int $novaDojavaNaseljeId = null;
+    public string $novaDojavaNaseljeNaziv = '';
+    
+    public string $novaDojavaUlicaPretraga = '';
+    public ?int $novaDojavaUlicaId = null;
+    public string $novaDojavaUlicaNaziv = '';
+    public bool $novaDojavaBezUlice = false;
+    
+    public string $novaDojavaKucniBroj = '';
+    public ?int $novaDojavaKucniBrojId = null;
+    public bool $novaDojavaBezKucnogBroja = false;
+    
+    public ?float $novaDojavaLatitude = null;
+    public ?float $novaDojavaLongitude = null;
 
     public function odaberi(string $tip, int $id): void
     {
         $this->odabrano = "{$tip}:{$id}";
         $this->aktivniModal = null;
         $this->modalData = [];
+        $this->upravljaniTimId = null;
         $this->novaNapomenaSadrzaj = '';
         $this->novaNapomenaTip = 'biljeska';
     }
@@ -60,6 +100,17 @@ class DispatcherMonitor extends Page
         $this->odabrano = null;
         $this->aktivniModal = null;
         $this->modalData = [];
+        $this->upravljaniTimId = null;
+    }
+
+    public function postaviTab(string $tab): void
+    {
+        $this->aktivniTab = $tab;
+    }
+
+    public function postaviPrio(string $prio): void
+    {
+        $this->aktivniPrio = $prio;
     }
 
     public function otvoriModal(string $modal): void
@@ -72,6 +123,514 @@ class DispatcherMonitor extends Page
     {
         $this->aktivniModal = null;
         $this->modalData = [];
+        $this->upravljaniTimId = null;
+        $this->upravljanjeNoviClanId = null;
+        $this->upravljanjeNovaUloga = 'clan';
+        $this->upravljanjeNoviZadatak = '';
+        $this->resetirajNovuDojavu();
+    }
+
+    public function otvoriUpravljanjeTimom(int $timId): void
+    {
+        $this->upravljaniTimId = $timId;
+        $this->aktivniModal = 'upravljajTimom';
+        $this->modalData = [];
+        $this->upravljanjeNoviClanId = null;
+        $this->upravljanjeNovaUloga = 'clan';
+        $tim = Tim::find($timId);
+        $this->upravljanjeNoviZadatak = $tim?->zadatak ?? '';
+    }
+
+    public function getUpravljaniTimProperty(): ?Tim
+    {
+        if (!$this->upravljaniTimId) return null;
+        return Tim::with([
+            'bazaPostrojba', 
+            'zapovjednik', 
+            'trenutniClanovi.vatrogasac.postrojba',
+        ])->find($this->upravljaniTimId);
+    }
+
+    public function dodajClanaUTim(): void
+    {
+        $tim = $this->upravljaniTim;
+        if (!$tim) return;
+
+        if (!$this->upravljanjeNoviClanId) {
+            Notification::make()->title('Odaberi vatrogasca')->warning()->send();
+            return;
+        }
+
+        $vec = TimClanstvo::where('tim_id', $tim->id)
+            ->where('vatrogasac_id', $this->upravljanjeNoviClanId)
+            ->whereNull('izasao_u')
+            ->exists();
+        
+        if ($vec) {
+            Notification::make()->title('Već u timu')->warning()->send();
+            return;
+        }
+
+        TimClanstvo::create([
+            'tim_id' => $tim->id,
+            'vatrogasac_id' => $this->upravljanjeNoviClanId,
+            'uloga' => $this->upravljanjeNovaUloga,
+            'usao_u' => now(),
+        ]);
+
+        $this->upravljanjeNoviClanId = null;
+        $this->upravljanjeNovaUloga = 'clan';
+
+        Notification::make()->title('Član dodan')->success()->send();
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function ukloniClanaIzTima(int $clanstvoId): void
+    {
+        $c = TimClanstvo::find($clanstvoId);
+        if (!$c) return;
+
+        $c->update(['izasao_u' => now()]);
+
+        Notification::make()->title('Član uklonjen')->success()->send();
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function azurirajZadatakTima(): void
+    {
+        $tim = $this->upravljaniTim;
+        if (!$tim) return;
+
+        $tim->update(['zadatak' => $this->upravljanjeNoviZadatak ?: null]);
+
+        Notification::make()->title('Zadatak ažuriran')->success()->send();
+    }
+
+    // ===== NOVA DOJAVA =====
+
+    public function otvoriNovuDojavu(): void
+    {
+        $this->aktivniModal = 'novaDojava';
+        $this->urediDojavaId = null;
+        $this->resetirajNovuDojavu();
+    }
+
+    public function otvoriUrediDojavu(int $dojavaId): void
+    {
+        $dojava = Dojava::find($dojavaId);
+        if (!$dojava) return;
+
+        $this->urediDojavaId = $dojava->id;
+        $this->aktivniModal = 'urediDojavu';
+        
+        $this->novaDojavaTip = $dojava->tip_nepogode ?? 'pozar';
+        $this->novaDojavaPrioritet = $dojava->prioritet ?? 'standardna';
+        $this->novaDojavaOpis = $dojava->opis ?? '';
+        $this->novaDojavaStatus = $dojava->status ?? 'zaprimljena';
+        
+        // Resetiraj adresne korake
+        $this->novaDojavaNaseljePretraga = '';
+        $this->novaDojavaNaseljeId = null;
+        $this->novaDojavaNaseljeNaziv = '';
+        $this->novaDojavaUlicaPretraga = '';
+        $this->novaDojavaUlicaId = null;
+        $this->novaDojavaUlicaNaziv = '';
+        $this->novaDojavaBezUlice = false;
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaBezKucnogBroja = false;
+        
+        $this->novaDojavaLatitude = $dojava->latitude ? (float) $dojava->latitude : null;
+        $this->novaDojavaLongitude = $dojava->longitude ? (float) $dojava->longitude : null;
+        
+        // Pokušaj učitati naselje/ulicu/kb iz baze ako postoje kolone
+        $kolone = \Schema::getColumnListing('dojavas');
+        
+        if (in_array('naselje_id', $kolone) && $dojava->naselje_id) {
+            $naselje = Naselje::find($dojava->naselje_id);
+            if ($naselje) {
+                $this->novaDojavaNaseljeId = $naselje->id;
+                $this->novaDojavaNaseljeNaziv = $naselje->naziv;
+            }
+        }
+        
+        if (in_array('ulica_id', $kolone) && $dojava->ulica_id) {
+            $ulica = Ulica::find($dojava->ulica_id);
+            if ($ulica) {
+                $this->novaDojavaUlicaId = $ulica->id;
+                $this->novaDojavaUlicaNaziv = $ulica->naziv;
+            }
+        }
+        
+        if (in_array('kucni_broj_id', $kolone) && $dojava->kucni_broj_id) {
+            $kb = KucniBroj::find($dojava->kucni_broj_id);
+            if ($kb) {
+                $this->novaDojavaKucniBrojId = $kb->id;
+                $this->novaDojavaKucniBroj = $kb->broj;
+            }
+        }
+    }
+
+    public function resetirajNovuDojavu(): void
+    {
+        $this->urediDojavaId = null;
+        $this->novaDojavaTip = 'pozar';
+        $this->novaDojavaPrioritet = 'standardna';
+        $this->novaDojavaOpis = '';
+        $this->novaDojavaStatus = 'zaprimljena';
+        $this->novaDojavaNaseljePretraga = '';
+        $this->novaDojavaNaseljeId = null;
+        $this->novaDojavaNaseljeNaziv = '';
+        $this->novaDojavaUlicaPretraga = '';
+        $this->novaDojavaUlicaId = null;
+        $this->novaDojavaUlicaNaziv = '';
+        $this->novaDojavaBezUlice = false;
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaBezKucnogBroja = false;
+        $this->novaDojavaLatitude = null;
+        $this->novaDojavaLongitude = null;
+    }
+
+    public function odaberiNaseljeUDojavi(int $naseljeId): void
+    {
+        $naselje = Naselje::find($naseljeId);
+        if (!$naselje) return;
+        
+        $this->novaDojavaNaseljeId = $naselje->id;
+        $this->novaDojavaNaseljeNaziv = $naselje->naziv;
+        $this->novaDojavaNaseljePretraga = '';
+        
+        $this->novaDojavaUlicaId = null;
+        $this->novaDojavaUlicaNaziv = '';
+        $this->novaDojavaUlicaPretraga = '';
+        $this->novaDojavaBezUlice = false;
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaBezKucnogBroja = false;
+        $this->novaDojavaLatitude = null;
+        $this->novaDojavaLongitude = null;
+    }
+
+    public function poniStavkuNaselje(): void
+    {
+        $this->novaDojavaNaseljeId = null;
+        $this->novaDojavaNaseljeNaziv = '';
+        $this->novaDojavaNaseljePretraga = '';
+        $this->novaDojavaUlicaId = null;
+        $this->novaDojavaUlicaNaziv = '';
+        $this->novaDojavaUlicaPretraga = '';
+        $this->novaDojavaBezUlice = false;
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaBezKucnogBroja = false;
+        $this->novaDojavaLatitude = null;
+        $this->novaDojavaLongitude = null;
+    }
+
+    public function odaberiUlicuUDojavi(int $ulicaId): void
+    {
+        $ulica = Ulica::find($ulicaId);
+        if (!$ulica) return;
+        
+        $this->novaDojavaUlicaId = $ulica->id;
+        $this->novaDojavaUlicaNaziv = $ulica->naziv;
+        $this->novaDojavaUlicaPretraga = '';
+        $this->novaDojavaBezUlice = false;
+        
+        $prviKB = KucniBroj::where('ulica_id', $ulicaId)
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->first();
+        
+        if ($prviKB) {
+            $this->novaDojavaLatitude = (float) $prviKB->latitude;
+            $this->novaDojavaLongitude = (float) $prviKB->longitude;
+        }
+        
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaBezKucnogBroja = false;
+    }
+
+    public function poniStavkuUlica(): void
+    {
+        $this->novaDojavaUlicaId = null;
+        $this->novaDojavaUlicaNaziv = '';
+        $this->novaDojavaUlicaPretraga = '';
+        $this->novaDojavaBezUlice = false;
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaBezKucnogBroja = false;
+    }
+
+    public function postaviBezUlice(): void
+    {
+        $this->novaDojavaBezUlice = true;
+        $this->novaDojavaUlicaId = null;
+        $this->novaDojavaUlicaNaziv = '';
+        $this->novaDojavaUlicaPretraga = '';
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaBezKucnogBroja = true;
+    }
+
+    public function odaberiKucniBrojUDojavi(int $kbId): void
+    {
+        $kb = KucniBroj::find($kbId);
+        if (!$kb) return;
+        
+        $this->novaDojavaKucniBrojId = $kb->id;
+        $this->novaDojavaKucniBroj = $kb->broj;
+        $this->novaDojavaBezKucnogBroja = false;
+        
+        if ($kb->latitude && $kb->longitude) {
+            $this->novaDojavaLatitude = (float) $kb->latitude;
+            $this->novaDojavaLongitude = (float) $kb->longitude;
+        }
+    }
+
+    public function postaviBezKucnogBroja(): void
+    {
+        $this->novaDojavaBezKucnogBroja = true;
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaKucniBroj = '';
+    }
+
+    public function poniStavkuKucniBroj(): void
+    {
+        $this->novaDojavaKucniBrojId = null;
+        $this->novaDojavaKucniBroj = '';
+        $this->novaDojavaBezKucnogBroja = false;
+    }
+
+    public function postaviKoordinate(float $lat, float $lng): void
+    {
+        $this->novaDojavaLatitude = $lat;
+        $this->novaDojavaLongitude = $lng;
+    }
+
+    public function kreirajNovuDojavu(): void
+    {
+        if (!$this->novaDojavaNaseljeId) {
+            Notification::make()->title('Nedostaje naselje')->body('Odaberi naselje.')->warning()->send();
+            return;
+        }
+
+        if (!$this->novaDojavaUlicaId && !$this->novaDojavaBezUlice) {
+            Notification::make()->title('Nedostaje ulica')->body('Odaberi ulicu ili označi "Bez ulice".')->warning()->send();
+            return;
+        }
+
+        $naselje = Naselje::find($this->novaDojavaNaseljeId);
+        if (!$naselje) {
+            Notification::make()->title('Naselje nije pronađeno')->warning()->send();
+            return;
+        }
+
+        $adresa = '';
+        if ($this->novaDojavaUlicaNaziv) {
+            $adresa .= $this->novaDojavaUlicaNaziv;
+            if ($this->novaDojavaKucniBroj) {
+                $adresa .= ' ' . $this->novaDojavaKucniBroj;
+            }
+            $adresa .= ', ';
+        }
+        $adresa .= $this->novaDojavaNaseljeNaziv;
+
+        $godina = now()->year;
+        $brojOvogodisnji = Dojava::whereYear('created_at', $godina)->count() + 1;
+        $brojDojave = $godina . '-DOJ-' . str_pad((string) $brojOvogodisnji, 6, '0', STR_PAD_LEFT);
+
+        $dojavaPodaci = [
+            'broj_dojave' => $brojDojave,
+            'tip_nepogode' => $this->novaDojavaTip,
+            'adresa' => $adresa,
+            'jls_id' => $naselje->jls_id,
+            'prioritet' => $this->novaDojavaPrioritet,
+            'opis' => trim($this->novaDojavaOpis) ?: null,
+            'status' => 'zaprimljena',
+            'operater_id' => auth()->id(),
+            'vrijeme_zaprimanja' => now(),
+        ];
+
+        if ($this->novaDojavaLatitude && $this->novaDojavaLongitude) {
+            $dojavaPodaci['latitude'] = $this->novaDojavaLatitude;
+            $dojavaPodaci['longitude'] = $this->novaDojavaLongitude;
+        }
+
+        $kolone = \Schema::getColumnListing('dojavas');
+        if (in_array('naselje_id', $kolone)) {
+            $dojavaPodaci['naselje_id'] = $this->novaDojavaNaseljeId;
+        }
+        if (in_array('ulica_id', $kolone)) {
+            $dojavaPodaci['ulica_id'] = $this->novaDojavaUlicaId;
+        }
+        if (in_array('kucni_broj_id', $kolone)) {
+            $dojavaPodaci['kucni_broj_id'] = $this->novaDojavaKucniBrojId;
+        }
+
+        $dojava = Dojava::create($dojavaPodaci);
+
+        Notification::make()
+            ->title('Dojava zaprimljena')
+            ->body("Dojava #{$dojava->broj_dojave} je kreirana.")
+            ->success()
+            ->send();
+
+        $this->zatvoriModal();
+        $this->odaberi('dojava', $dojava->id);
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function azurirajDojavu(): void
+    {
+        if (!$this->urediDojavaId) return;
+        
+        $dojava = Dojava::find($this->urediDojavaId);
+        if (!$dojava) return;
+
+        if (!$this->novaDojavaNaseljeId) {
+            Notification::make()->title('Nedostaje naselje')->body('Odaberi naselje.')->warning()->send();
+            return;
+        }
+
+        if (!$this->novaDojavaUlicaId && !$this->novaDojavaBezUlice) {
+            Notification::make()->title('Nedostaje ulica')->body('Odaberi ulicu ili označi "Bez ulice".')->warning()->send();
+            return;
+        }
+
+        $naselje = Naselje::find($this->novaDojavaNaseljeId);
+        if (!$naselje) return;
+
+        $adresa = '';
+        if ($this->novaDojavaUlicaNaziv) {
+            $adresa .= $this->novaDojavaUlicaNaziv;
+            if ($this->novaDojavaKucniBroj) {
+                $adresa .= ' ' . $this->novaDojavaKucniBroj;
+            }
+            $adresa .= ', ';
+        }
+        $adresa .= $this->novaDojavaNaseljeNaziv;
+
+        $podaci = [
+            'tip_nepogode' => $this->novaDojavaTip,
+            'adresa' => $adresa,
+            'jls_id' => $naselje->jls_id,
+            'prioritet' => $this->novaDojavaPrioritet,
+            'opis' => trim($this->novaDojavaOpis) ?: null,
+            'status' => $this->novaDojavaStatus,
+            'latitude' => $this->novaDojavaLatitude,
+            'longitude' => $this->novaDojavaLongitude,
+        ];
+
+        $kolone = \Schema::getColumnListing('dojavas');
+        if (in_array('naselje_id', $kolone)) {
+            $podaci['naselje_id'] = $this->novaDojavaNaseljeId;
+        }
+        if (in_array('ulica_id', $kolone)) {
+            $podaci['ulica_id'] = $this->novaDojavaUlicaId;
+        }
+        if (in_array('kucni_broj_id', $kolone)) {
+            $podaci['kucni_broj_id'] = $this->novaDojavaKucniBrojId;
+        }
+
+        $dojava->update($podaci);
+
+        Notification::make()
+            ->title('Dojava ažurirana')
+            ->body("Dojava #{$dojava->broj_dojave} je spremljena.")
+            ->success()
+            ->send();
+
+        $this->zatvoriModal();
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function brzaPromjenaStatusaDojave(string $noviStatus): void
+    {
+        $dojava = $this->odabranaDojava;
+        if (!$dojava) return;
+
+        $dojava->update(['status' => $noviStatus]);
+
+        Notification::make()
+            ->title('Status dojave promijenjen')
+            ->body($dojava->broj_dojave . ' → ' . $noviStatus)
+            ->success()
+            ->send();
+
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function brzaPromjenaPrioritetaDojave(string $noviPrio): void
+    {
+        $dojava = $this->odabranaDojava;
+        if (!$dojava) return;
+
+        $dojava->update(['prioritet' => $noviPrio]);
+
+        Notification::make()
+            ->title('Prioritet promijenjen')
+            ->body($dojava->broj_dojave . ' → ' . $noviPrio)
+            ->success()
+            ->send();
+
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function getNaseljaRezultatiProperty(): array
+    {
+        $q = trim($this->novaDojavaNaseljePretraga);
+        if (strlen($q) < 2) return [];
+        
+        return Naselje::with('jls')
+            ->where('naziv', 'ilike', $q . '%')
+            ->orderBy('naziv')
+            ->limit(15)
+            ->get()
+            ->map(fn($n) => [
+                'id' => $n->id,
+                'naziv' => $n->naziv,
+                'jls' => $n->jls?->naziv ?? '—',
+                'postanski_broj' => $n->postanski_broj,
+            ])
+            ->toArray();
+    }
+
+    public function getUliceRezultatiProperty(): array
+    {
+        if (!$this->novaDojavaNaseljeId) return [];
+        
+        $q = trim($this->novaDojavaUlicaPretraga);
+        
+        $query = Ulica::where('naselje_id', $this->novaDojavaNaseljeId);
+        
+        if (strlen($q) >= 1) {
+            $query->where('naziv', 'ilike', '%' . $q . '%');
+        }
+        
+        return $query->orderBy('naziv')
+            ->limit(30)
+            ->pluck('naziv', 'id')
+            ->toArray();
+    }
+
+    public function getKucniBrojeviRezultatiProperty(): array
+    {
+        if (!$this->novaDojavaUlicaId) return [];
+        
+        return KucniBroj::where('ulica_id', $this->novaDojavaUlicaId)
+            ->orderByRaw("CAST(regexp_replace(broj, '[^0-9]', '', 'g') AS INTEGER) NULLS LAST")
+            ->orderBy('broj')
+            ->get()
+            ->map(fn($kb) => [
+                'id' => $kb->id,
+                'broj' => $kb->broj,
+                'lat' => (float) $kb->latitude,
+                'lng' => (float) $kb->longitude,
+            ])
+            ->toArray();
     }
 
     public function getOdabranTipProperty(): ?string
@@ -109,10 +668,6 @@ class DispatcherMonitor extends Page
         ])->find($this->odabranId);
     }
 
-    /**
-     * LIVE STREAM — spaja napomene + status logove u jedan kronološki tok.
-     * Sortirano od najnovijeg prema najstarijem.
-     */
     public function getLiveStreamProperty(): array
     {
         $intervencija = $this->odabranaIntervencija;
@@ -120,7 +675,6 @@ class DispatcherMonitor extends Page
 
         $stream = collect();
 
-        // 1. Otvaranje intervencije
         $stream->push([
             'tip' => 'sistem',
             'ikona' => '🔥',
@@ -131,7 +685,6 @@ class DispatcherMonitor extends Page
             'boja' => ['bg' => '#FEE2E2', 'text' => '#991B1B', 'border' => '#DC2626'],
         ]);
 
-        // 2. Statusi timova
         $statusLogovi = TimStatusLog::where('intervencija_id', $intervencija->id)
             ->with(['tim', 'autor'])
             ->orderBy('vrijeme', 'desc')
@@ -159,7 +712,6 @@ class DispatcherMonitor extends Page
             ]);
         }
 
-        // 3. Napomene
         $napomene = IntervencijaNapomena::where('intervencija_id', $intervencija->id)
             ->with('autor')
             ->orderBy('vrijeme', 'desc')
@@ -178,7 +730,6 @@ class DispatcherMonitor extends Page
             ]);
         }
 
-        // 4. Dojave vezane
         foreach ($intervencija->dojave as $d) {
             $stream->push([
                 'tip' => 'dojava',
@@ -191,7 +742,6 @@ class DispatcherMonitor extends Page
             ]);
         }
 
-        // Sortiraj po vremenu, najnoviji prvi
         return $stream
             ->sortByDesc('vrijeme')
             ->values()
@@ -205,11 +755,7 @@ class DispatcherMonitor extends Page
 
         $sadrzaj = trim($this->novaNapomenaSadrzaj);
         if (empty($sadrzaj)) {
-            Notification::make()
-                ->title('Prazan sadržaj')
-                ->body('Upiši nešto prije slanja.')
-                ->warning()
-                ->send();
+            Notification::make()->title('Prazan sadržaj')->body('Upiši nešto prije slanja.')->warning()->send();
             return;
         }
 
@@ -223,11 +769,7 @@ class DispatcherMonitor extends Page
 
         $this->novaNapomenaSadrzaj = '';
 
-        Notification::make()
-            ->title('Napomena dodana')
-            ->success()
-            ->send();
-
+        Notification::make()->title('Napomena dodana')->success()->send();
         $this->dispatch('osvjeziMapu');
     }
 
@@ -237,23 +779,14 @@ class DispatcherMonitor extends Page
         if (!$n) return;
 
         if ($n->autor_id !== auth()->id()) {
-            Notification::make()
-                ->title('Nije moguće obrisati')
-                ->body('Možeš obrisati samo svoje napomene.')
-                ->warning()
-                ->send();
+            Notification::make()->title('Nije moguće obrisati')->body('Možeš obrisati samo svoje napomene.')->warning()->send();
             return;
         }
 
         $n->delete();
 
-        Notification::make()
-            ->title('Napomena obrisana')
-            ->success()
-            ->send();
+        Notification::make()->title('Napomena obrisana')->success()->send();
     }
-
-    // ===== AKCIJE TIMOVA =====
 
     public function timPolazak(int $timId): void
     {
@@ -292,15 +825,9 @@ class DispatcherMonitor extends Page
             'napomena' => $opis,
         ]);
 
-        Notification::make()
-            ->title($tim->naziv . ': ' . $stari . ' → ' . $noviStatus)
-            ->success()
-            ->send();
-
+        Notification::make()->title($tim->naziv . ': ' . $stari . ' → ' . $noviStatus)->success()->send();
         $this->dispatch('osvjeziMapu');
     }
-
-    // ===== REZERVACIJE =====
 
     public function aktivirajRezervaciju(int $rezervacijaId): void
     {
@@ -332,12 +859,7 @@ class DispatcherMonitor extends Page
             ->where('redni_broj', '>', $rez->redni_broj)
             ->decrement('redni_broj');
 
-        Notification::make()
-            ->title('Rezervacija aktivirana')
-            ->body("Tim '{$tim->naziv}' je premješten na ovu intervenciju.")
-            ->success()
-            ->send();
-
+        Notification::make()->title('Rezervacija aktivirana')->body("Tim '{$tim->naziv}' je premješten.")->success()->send();
         $this->dispatch('osvjeziMapu');
     }
 
@@ -346,10 +868,7 @@ class DispatcherMonitor extends Page
         $rez = TimRezervacija::find($rezervacijaId);
         if (!$rez || !$rez->jeAktivna()) return;
 
-        $rez->update([
-            'otkazano_u' => now(),
-            'razlog_otkazivanja' => 'rucno',
-        ]);
+        $rez->update(['otkazano_u' => now(), 'razlog_otkazivanja' => 'rucno']);
 
         TimRezervacija::where('tim_id', $rez->tim_id)
             ->whereNull('aktivirano_u')
@@ -357,15 +876,9 @@ class DispatcherMonitor extends Page
             ->where('redni_broj', '>', $rez->redni_broj)
             ->decrement('redni_broj');
 
-        Notification::make()
-            ->title('Rezervacija otkazana')
-            ->success()
-            ->send();
-
+        Notification::make()->title('Rezervacija otkazana')->success()->send();
         $this->dispatch('osvjeziMapu');
     }
-
-    // ===== KREIRAJ NOVI TIM =====
 
     public function kreirajTim(): void
     {
@@ -375,11 +888,7 @@ class DispatcherMonitor extends Page
         $podaci = $this->modalData;
         
         if (empty($podaci['naziv']) || empty($podaci['baza_postrojba_id']) || empty($podaci['zapovjednik_id'])) {
-            Notification::make()
-                ->title('Nedostaju podaci')
-                ->body('Naziv, bazna postrojba i zapovjednik su obavezni.')
-                ->warning()
-                ->send();
+            Notification::make()->title('Nedostaju podaci')->body('Naziv, bazna postrojba i zapovjednik su obavezni.')->warning()->send();
             return;
         }
 
@@ -408,17 +917,10 @@ class DispatcherMonitor extends Page
             'intervencija_id' => $intervencija->id,
         ]);
 
-        Notification::make()
-            ->title('Tim formiran')
-            ->body("Tim '{$tim->naziv}' je kreiran.")
-            ->success()
-            ->send();
-
+        Notification::make()->title('Tim formiran')->body("Tim '{$tim->naziv}' je kreiran.")->success()->send();
         $this->zatvoriModal();
         $this->dispatch('osvjeziMapu');
     }
-
-    // ===== POŠALJI POSTOJEĆI TIM =====
 
     public function posaljiTim(): void
     {
@@ -450,17 +952,10 @@ class DispatcherMonitor extends Page
             'napomena' => $opis,
         ]);
 
-        Notification::make()
-            ->title('Tim poslan')
-            ->body("Tim '{$tim->naziv}' je sada na ovoj intervenciji.")
-            ->success()
-            ->send();
-
+        Notification::make()->title('Tim poslan')->body("Tim '{$tim->naziv}' je sada na ovoj intervenciji.")->success()->send();
         $this->zatvoriModal();
         $this->dispatch('osvjeziMapu');
     }
-
-    // ===== REZERVIRAJ TIM =====
 
     public function rezervirajTim(): void
     {
@@ -480,11 +975,7 @@ class DispatcherMonitor extends Page
             ->exists();
         
         if ($vec) {
-            Notification::make()
-                ->title('Već rezervirano')
-                ->body("Tim '{$tim->naziv}' već ima aktivnu rezervaciju.")
-                ->warning()
-                ->send();
+            Notification::make()->title('Već rezervirano')->body("Tim '{$tim->naziv}' već ima aktivnu rezervaciju.")->warning()->send();
             return;
         }
 
@@ -502,17 +993,10 @@ class DispatcherMonitor extends Page
             'napomena' => $this->modalData['napomena'] ?? null,
         ]);
 
-        Notification::make()
-            ->title('Tim rezerviran')
-            ->body("Tim '{$tim->naziv}' je u redu čekanja.")
-            ->success()
-            ->send();
-
+        Notification::make()->title('Tim rezerviran')->body("Tim '{$tim->naziv}' je u redu čekanja.")->success()->send();
         $this->zatvoriModal();
         $this->dispatch('osvjeziMapu');
     }
-
-    // ===== DODAJ DOJAVU U INTERVENCIJU =====
 
     public function dodajDojavuUIntervenciju(): void
     {
@@ -530,17 +1014,10 @@ class DispatcherMonitor extends Page
             'status' => 'dodijeljena',
         ]);
 
-        Notification::make()
-            ->title('Dojava dodana')
-            ->body("Dojava #{$dojava->broj_dojave} je sad dio intervencije.")
-            ->success()
-            ->send();
-
+        Notification::make()->title('Dojava dodana')->body("Dojava #{$dojava->broj_dojave} je sad dio intervencije.")->success()->send();
         $this->zatvoriModal();
         $this->dispatch('osvjeziMapu');
     }
-
-    // ===== ZATVORI INTERVENCIJU =====
 
     public function zatvoriIntervenciju(): void
     {
@@ -560,17 +1037,10 @@ class DispatcherMonitor extends Page
                 'razlog_otkazivanja' => 'intervencija_zatvorena',
             ]);
 
-        Notification::make()
-            ->title('Intervencija zatvorena')
-            ->body('Aktivne rezervacije su otkazane.')
-            ->success()
-            ->send();
-
+        Notification::make()->title('Intervencija zatvorena')->body('Aktivne rezervacije su otkazane.')->success()->send();
         $this->zatvoriDetalje();
         $this->dispatch('osvjeziMapu');
     }
-
-    // ===== AKCIJE DOJAVE =====
 
     public function otvoriIntervencijuIzDojave(): void
     {
@@ -618,12 +1088,7 @@ class DispatcherMonitor extends Page
             'status' => 'dodijeljena',
         ]);
 
-        Notification::make()
-            ->title('Intervencija otvorena')
-            ->body("Intervencija #{$intervencija->broj} kreirana iz dojave.")
-            ->success()
-            ->send();
-
+        Notification::make()->title('Intervencija otvorena')->body("Intervencija #{$intervencija->broj} kreirana.")->success()->send();
         $this->odaberi('intervencija', $intervencija->id);
         $this->dispatch('osvjeziMapu');
     }
@@ -644,8 +1109,6 @@ class DispatcherMonitor extends Page
         };
         return $tipNaziv . ' — ' . Str::limit($dojava->adresa, 50);
     }
-
-    // ===== PODACI ZA MODAL OPCIJE =====
 
     public function getPostrojbeOpcijeProperty(): array
     {
@@ -716,13 +1179,35 @@ class DispatcherMonitor extends Page
             ->toArray();
     }
 
-    // ===== GLAVNI DATA =====
-
     public function getViewData(): array
     {
-        $dojave = Dojava::query()
+        $dojaveQuery = Dojava::query()
             ->whereIn('status', ['zaprimljena', 'dodijeljena', 'u_tijeku'])
-            ->with(['jls', 'intervencija'])
+            ->with(['jls', 'intervencija']);
+        
+        $intervencijeQuery = Intervencija::query()
+            ->where('status', 'aktivna')
+            ->with(['jls', 'voditelj', 'timovi.zapovjednik', 'timovi.trenutniClanovi']);
+
+        if ($this->aktivniPrio !== 'sve') {
+            $dojaveQuery->where('prioritet', $this->aktivniPrio);
+            $intervencijeQuery->where('prioritet', $this->aktivniPrio);
+        }
+
+        if (!empty(trim($this->pretraga))) {
+            $q = '%' . trim($this->pretraga) . '%';
+            $dojaveQuery->where(function($qb) use ($q) {
+                $qb->where('adresa', 'ilike', $q)
+                   ->orWhere('broj_dojave', 'ilike', $q);
+            });
+            $intervencijeQuery->where(function($qb) use ($q) {
+                $qb->where('naziv', 'ilike', $q)
+                   ->orWhere('broj', 'ilike', $q)
+                   ->orWhere('adresa', 'ilike', $q);
+            });
+        }
+
+        $dojave = $dojaveQuery
             ->orderByRaw("CASE prioritet 
                 WHEN 'kriticna' THEN 1 
                 WHEN 'visoka' THEN 2 
@@ -732,9 +1217,7 @@ class DispatcherMonitor extends Page
             ->latest('vrijeme_zaprimanja')
             ->get();
 
-        $intervencije = Intervencija::query()
-            ->where('status', 'aktivna')
-            ->with(['jls', 'voditelj', 'timovi.zapovjednik', 'timovi.trenutniClanovi'])
+        $intervencije = $intervencijeQuery
             ->orderByRaw("CASE prioritet 
                 WHEN 'kriticna' THEN 1 
                 WHEN 'visoka' THEN 2 
@@ -749,8 +1232,12 @@ class DispatcherMonitor extends Page
             ->limit(50)
             ->get();
 
-        $brojKritickih = $dojave->where('prioritet', 'kriticna')->count();
-        $brojAktivnihIntervencija = $intervencije->count();
+        $sviDojave = Dojava::whereIn('status', ['zaprimljena', 'dodijeljena', 'u_tijeku'])->count();
+        $sveIntervencije = Intervencija::where('status', 'aktivna')->count();
+
+        $brojKritickih = Dojava::whereIn('status', ['zaprimljena', 'dodijeljena', 'u_tijeku'])
+            ->where('prioritet', 'kriticna')->count();
+        $brojAktivnihIntervencija = $sveIntervencije;
 
         if ($brojKritickih > 0 || $brojAktivnihIntervencija >= 5) {
             $stanje = ['naslov' => 'KRITIČNO', 'boja' => '#DC2626'];
@@ -765,12 +1252,13 @@ class DispatcherMonitor extends Page
             'intervencije' => $intervencije,
             'timeline' => $timeline,
             'stanje' => $stanje,
-            'brojDojava' => $dojave->count(),
-            'brojIntervencija' => $intervencije->count(),
+            'brojDojava' => $sviDojave,
+            'brojIntervencija' => $sveIntervencije,
             'brojTimova' => Tim::where('trenutni_status', '!=', 'raspusten')->count(),
             'odabranaDojava' => $this->odabranaDojava,
             'odabranaIntervencija' => $this->odabranaIntervencija,
             'liveStream' => $this->liveStream,
+            'upravljaniTim' => $this->upravljaniTim,
         ];
     }
 }
