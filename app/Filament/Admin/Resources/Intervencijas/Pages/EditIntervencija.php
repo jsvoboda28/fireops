@@ -3,10 +3,12 @@
 namespace App\Filament\Admin\Resources\Intervencijas\Pages;
 
 use App\Filament\Admin\Resources\Intervencijas\IntervencijaResource;
+use App\Models\Dojava;
 use App\Models\Postrojba;
 use App\Models\Tim;
 use App\Models\TimClanstvo;
 use App\Models\TimStatusLog;
+use App\Models\TimVozilo;
 use App\Models\Vatrogasac;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
@@ -25,10 +27,10 @@ class EditIntervencija extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            // Otvori novi tim na ovoj intervenciji
             Action::make('noviTim')
                 ->label('➕ Novi tim')
                 ->color('success')
+                ->button()
                 ->modalHeading('Formiraj novi tim na ovoj intervenciji')
                 ->modalSubmitActionLabel('Formiraj tim')
                 ->schema([
@@ -42,8 +44,7 @@ class EditIntervencija extends EditRecord
                         ->label('Bazna postrojba')
                         ->options(Postrojba::where('aktivna', true)->orderBy('naziv')->pluck('naziv', 'id'))
                         ->searchable()
-                        ->required()
-                        ->helperText('Postrojba odakle tim dolazi'),
+                        ->required(),
                     
                     Select::make('zapovjednik_id')
                         ->label('Zapovjednik tima')
@@ -63,8 +64,7 @@ class EditIntervencija extends EditRecord
                     
                     Textarea::make('zadatak')
                         ->label('Zadatak tima')
-                        ->rows(2)
-                        ->placeholder('npr. Gašenje glavnog požara'),
+                        ->rows(2),
                 ])
                 ->action(function (array $data) {
                     $tim = Tim::create([
@@ -77,7 +77,6 @@ class EditIntervencija extends EditRecord
                         'vrijeme_formiranja' => now(),
                     ]);
                     
-                    // Dodaj zapovjednika kao prvog člana
                     TimClanstvo::create([
                         'tim_id' => $tim->id,
                         'vatrogasac_id' => $data['zapovjednik_id'],
@@ -85,7 +84,6 @@ class EditIntervencija extends EditRecord
                         'usao_u' => now(),
                     ]);
                     
-                    // Status log
                     TimStatusLog::create([
                         'tim_id' => $tim->id,
                         'status' => 'formiran',
@@ -96,7 +94,24 @@ class EditIntervencija extends EditRecord
                     
                     Notification::make()
                         ->title('Tim formiran')
-                        ->body("Tim '{$tim->naziv}' je kreiran. Sada možeš dodati vatrogasce i postaviti status.")
+                        ->body("Tim '{$tim->naziv}' je kreiran sa zapovjednikom.")
+                        ->success()
+                        ->send();
+                }),
+
+            Action::make('zatvoriIntervenciju')
+                ->label('🔒 Zatvori intervenciju')
+                ->color('gray')
+                ->visible(fn () => $this->record->status === 'aktivna')
+                ->requiresConfirmation()
+                ->action(function () {
+                    $this->record->update([
+                        'status' => 'zatvorena',
+                        'vrijeme_zatvaranja' => now(),
+                    ]);
+
+                    Notification::make()
+                        ->title('Intervencija zatvorena')
                         ->success()
                         ->send();
                 }),
@@ -105,30 +120,111 @@ class EditIntervencija extends EditRecord
         ];
     }
 
-    public function getViewData(): array
+    public function timPolazak(int $timId): void
     {
-        $intervencija = $this->record;
-        
-        $timovi = Tim::where('intervencija_id', $intervencija->id)
+        $this->promijeniStatusTima($timId, 'polazak', 'Tim krenuo na intervenciju');
+    }
+
+    public function timNaMjestu(int $timId): void
+    {
+        $this->promijeniStatusTima($timId, 'na_mjestu', 'Tim stigao na mjesto');
+    }
+
+    public function timZavrsili(int $timId): void
+    {
+        $this->promijeniStatusTima($timId, 'intervencija_zavrsena', 'Tim završio intervenciju');
+    }
+
+    public function timPovratak(int $timId): void
+    {
+        $this->promijeniStatusTima($timId, 'povratak', 'Tim se vraća');
+    }
+
+    protected function promijeniStatusTima(int $timId, string $noviStatus, string $opis): void
+    {
+        $tim = Tim::find($timId);
+        if (!$tim) return;
+
+        $stari = $tim->trenutni_status;
+        $tim->update(['trenutni_status' => $noviStatus]);
+
+        TimStatusLog::create([
+            'tim_id' => $tim->id,
+            'status' => $noviStatus,
+            'vrijeme' => now(),
+            'autor_id' => auth()->id(),
+            'intervencija_id' => $this->record->id,
+            'napomena' => $opis,
+        ]);
+
+        Notification::make()
+            ->title($tim->naziv . ': ' . $stari . ' → ' . $noviStatus)
+            ->success()
+            ->send();
+    }
+
+    // ===== COMPUTED METODE ZA BLADE =====
+
+    public function getTimoviProperty()
+    {
+        return Tim::where('intervencija_id', $this->record->id)
             ->with([
                 'zapovjednik.postrojba',
                 'bazaPostrojba',
                 'trenutniClanovi.vatrogasac.postrojba',
-                'trenutnaVozila.vozilo',
+                'trenutnaVozila.vozilo.postrojba',
             ])
+            ->orderByRaw("CASE trenutni_status
+                WHEN 'na_mjestu' THEN 1
+                WHEN 'polazak' THEN 2
+                WHEN 'povratak' THEN 3
+                WHEN 'formiran' THEN 4
+                WHEN 'intervencija_zavrsena' THEN 5
+                WHEN 'odmor' THEN 6
+                WHEN 'cekanje_u_bazi' THEN 7
+                WHEN 'raspusten' THEN 8
+                ELSE 9
+            END")
             ->orderBy('vrijeme_formiranja')
             ->get();
+    }
 
-        $timeline = TimStatusLog::where('intervencija_id', $intervencija->id)
+    public function getTimelineProperty()
+    {
+        return TimStatusLog::where('intervencija_id', $this->record->id)
             ->with(['tim', 'autor'])
             ->orderBy('vrijeme', 'desc')
-            ->limit(50)
+            ->limit(100)
             ->get();
+    }
 
-        return [
-            'intervencija' => $intervencija,
-            'timovi' => $timovi,
-            'timeline' => $timeline,
-        ];
+    public function getDojaveVezaneProperty()
+    {
+        return Dojava::where('intervencija_id', $this->record->id)
+            ->orderBy('vrijeme_zaprimanja', 'desc')
+            ->get();
+    }
+
+    public function getBrojClanovaUkupnoProperty(): int
+    {
+        $timIds = Tim::where('intervencija_id', $this->record->id)->pluck('id');
+        return TimClanstvo::whereIn('tim_id', $timIds)
+            ->whereNull('izasao_u')
+            ->count();
+    }
+
+    public function getBrojVozilaUkupnoProperty(): int
+    {
+        $timIds = Tim::where('intervencija_id', $this->record->id)->pluck('id');
+        return TimVozilo::whereIn('tim_id', $timIds)
+            ->whereNull('skinuto_u')
+            ->count();
+    }
+
+    public function getBrojAktivnihTimovaProperty(): int
+    {
+        return Tim::where('intervencija_id', $this->record->id)
+            ->where('trenutni_status', '!=', 'raspusten')
+            ->count();
     }
 }

@@ -12,18 +12,27 @@ class CreateDojava extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Auto broj dojave (npr. 2026-001234)
         if (empty($data['broj_dojave'])) {
-            $brojDanas = Dojava::whereDate('created_at', today())->count() + 1;
-            $data['broj_dojave'] = now()->format('Y') . '-' . str_pad($brojDanas, 6, '0', STR_PAD_LEFT);
+            $godina = now()->format('Y');
+            
+            // Pronađi zadnji broj dojave ove godine
+            $zadnja = Dojava::where('broj_dojave', 'LIKE', $godina . '-%')
+                ->orderByRaw("CAST(SPLIT_PART(broj_dojave, '-', 2) AS INTEGER) DESC")
+                ->first();
+            
+            $sljedeci = 1;
+            if ($zadnja) {
+                $parts = explode('-', $zadnja->broj_dojave);
+                $sljedeci = (int) end($parts) + 1;
+            }
+            
+            $data['broj_dojave'] = $godina . '-' . str_pad($sljedeci, 6, '0', STR_PAD_LEFT);
         }
 
-        // Auto vrijeme zaprimanja ako nije postavljeno
         if (empty($data['vrijeme_zaprimanja'])) {
             $data['vrijeme_zaprimanja'] = now();
         }
 
-        // Auto operater (trenutni korisnik)
         if (empty($data['operater_id'])) {
             $data['operater_id'] = auth()->id();
         }

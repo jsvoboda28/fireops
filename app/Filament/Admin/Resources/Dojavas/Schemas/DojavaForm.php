@@ -141,7 +141,7 @@ class DojavaForm
                             ->geoMan(false)
                             ->tilesUrl('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
                             ->extraStyles(['min-height: 400px', 'border-radius: 8px'])
-                            ->helperText('Klikni bilo gdje na karti — GPS i adresa će se popuniti automatski (reverse geocoding kroz OpenStreetMap).')
+                            ->helperText('Klikni bilo gdje na karti — GPS i adresa će se popuniti automatski.')
                             ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                 if (!$state || !isset($state['lat']) || !isset($state['lng'])) return;
 
@@ -245,41 +245,53 @@ class DojavaForm
                     ]),
 
                 Section::make('Klasifikacija')
+                    ->description('Prioritet se automatski izračunava iz tipa i ugroženosti — možeš ga povisiti ručno.')
                     ->columns(3)
                     ->schema([
                         Select::make('tip_nepogode')
                             ->label('Tip nepogode')
                             ->required()
+                            ->live()
                             ->options([
-                                'olujno_nevrijeme' => 'Olujno nevrijeme',
-                                'poplava' => 'Poplava',
-                                'pozar' => 'Požar',
-                                'snijeg_led' => 'Snijeg / led',
-                                'klizište' => 'Klizište',
-                                'tuca' => 'Tuča',
-                                'potres' => 'Potres',
-                                'ostalo' => 'Ostalo',
-                            ]),
+                                'olujno_nevrijeme' => '⛈ Olujno nevrijeme',
+                                'poplava' => '🌊 Poplava',
+                                'pozar' => '🔥 Požar',
+                                'snijeg_led' => '❄ Snijeg / led',
+                                'klizište' => '⛰ Klizište',
+                                'tuca' => '🧊 Tuča',
+                                'potres' => '🌍 Potres',
+                                'spasavanje' => '⛑ Spašavanje',
+                                'opasne_tvari' => '☣ Opasne tvari',
+                                'ostalo' => '❓ Ostalo',
+                            ])
+                            ->afterStateUpdated(function (Set $set, Get $get, $state) {
+                                $set('prioritet', self::izracunajPrioritet($state, $get('ugrozenost_ljudi')));
+                            }),
 
                         Select::make('ugrozenost_ljudi')
                             ->label('Ugroženost ljudi')
                             ->required()
+                            ->live()
                             ->options([
-                                'da' => 'DA — ima ugroženih',
+                                'da' => '⚠ DA — ima ugroženih',
                                 'ne' => 'NE — nema ugroženih',
                                 'ne_znam' => 'Ne znam',
                             ])
-                            ->default('ne_znam'),
+                            ->default('ne_znam')
+                            ->afterStateUpdated(function (Set $set, Get $get, $state) {
+                                $set('prioritet', self::izracunajPrioritet($get('tip_nepogode'), $state));
+                            }),
 
                         Select::make('prioritet')
-                            ->label('Prioritet')
+                            ->label('Prioritet (auto)')
                             ->required()
                             ->options([
                                 'kriticna' => '🔴 Kritična',
                                 'visoka' => '🟡 Visoka',
                                 'standardna' => '🟢 Standardna',
                             ])
-                            ->default('standardna'),
+                            ->default('standardna')
+                            ->helperText('Auto se postavlja, možeš povisiti ručno'),
                     ]),
 
                 Section::make('Opis')
@@ -333,5 +345,31 @@ class DojavaForm
                             ->label('Vrijeme zatvaranja'),
                     ]),
             ]);
+    }
+
+    /**
+     * Auto-prioritet po tipu nepogode i ugroženosti.
+     */
+    public static function izracunajPrioritet(?string $tip, ?string $ugrozenost): string
+    {
+        // Opasne tvari = uvijek kritična
+        if ($tip === 'opasne_tvari') {
+            return 'kriticna';
+        }
+
+        // Ako su ljudi ugroženi
+        if ($ugrozenost === 'da') {
+            if (in_array($tip, ['pozar', 'spasavanje', 'potres'])) {
+                return 'kriticna';
+            }
+            return 'visoka';
+        }
+
+        // Nema ugroženih ili ne zna se
+        return match($tip) {
+            'pozar', 'spasavanje', 'potres' => 'visoka',
+            'olujno_nevrijeme', 'poplava', 'klizište', 'snijeg_led' => 'standardna',
+            default => 'standardna',
+        };
     }
 }
