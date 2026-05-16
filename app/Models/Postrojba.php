@@ -63,6 +63,14 @@ class Postrojba extends Model
     {
         return $this->hasMany(Vozilo::class);
     }
+
+    /**
+     * Timovi koji su trenutno u bazi ove postrojbe.
+     */
+    public function timoviUBazi(): HasMany
+    {
+        return $this->hasMany(Tim::class, 'baza_postrojba_id');
+    }
     
     /**
      * Stvarni broj članova.

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Vozilo extends Model
 {
@@ -45,6 +46,22 @@ class Vozilo extends Model
     {
         return $this->belongsTo(Postrojba::class);
     }
+
+    /**
+     * Povijest dodjela u timove.
+     */
+    public function timoviClanstvo(): HasMany
+    {
+        return $this->hasMany(TimVozilo::class);
+    }
+
+    /**
+     * Trenutni timovi (gdje je vozilo trenutno).
+     */
+    public function trenutniTimovi(): HasMany
+    {
+        return $this->hasMany(TimVozilo::class)->whereNull('skinuto_u');
+    }
     
     /**
      * Provjera da li tehnički ističe za manje od 30 dana.
@@ -67,5 +84,13 @@ class Vozilo extends Model
             return false;
         }
         return $this->tehnicki_pregled_do->isPast();
+    }
+
+    /**
+     * Da li je vozilo trenutno u nekom timu.
+     */
+    public function jeUTimu(): bool
+    {
+        return $this->trenutniTimovi()->exists();
     }
 }

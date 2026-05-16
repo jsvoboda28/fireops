@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Dojava extends Model
 {
     protected $table = 'dojavas';
-    
+
     protected $fillable = [
         'broj_dojave',
         'vrijeme_zaprimanja',
@@ -22,6 +22,7 @@ class Dojava extends Model
         'opcina',
         'jls_id',
         'dogadjaj_id',
+        'intervencija_id',
         'latitude',
         'longitude',
         'tip_nepogode',
@@ -30,7 +31,7 @@ class Dojava extends Model
         'opis',
         'status',
     ];
-    
+
     protected $casts = [
         'vrijeme_zaprimanja' => 'datetime',
         'vrijeme_zatvaranja' => 'datetime',
@@ -38,7 +39,7 @@ class Dojava extends Model
         'latitude' => 'decimal:7',
         'longitude' => 'decimal:7',
     ];
-    
+
     /**
      * Operater (User) koji je zaprimio dojavu.
      */
@@ -46,7 +47,7 @@ class Dojava extends Model
     {
         return $this->belongsTo(User::class, 'operater_id');
     }
-    
+
     /**
      * JLS kojem pripada dojava.
      */
@@ -54,12 +55,20 @@ class Dojava extends Model
     {
         return $this->belongsTo(Jls::class);
     }
-    
+
     /**
      * Operativni događaj kojem dojava pripada.
      */
     public function dogadjaj(): BelongsTo
     {
         return $this->belongsTo(OperativniDogadjaj::class, 'dogadjaj_id');
+    }
+
+    /**
+     * Intervencija kojoj dojava pripada (ako je dispečer otvorio intervenciju).
+     */
+    public function intervencija(): BelongsTo
+    {
+        return $this->belongsTo(Intervencija::class);
     }
 }
