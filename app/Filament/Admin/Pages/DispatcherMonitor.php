@@ -12,8 +12,10 @@ use App\Models\Tim;
 use App\Models\TimClanstvo;
 use App\Models\TimRezervacija;
 use App\Models\TimStatusLog;
+use App\Models\TimVozilo;
 use App\Models\Ulica;
 use App\Models\Vatrogasac;
+use App\Models\Vozilo;
 use BackedEnum;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -58,11 +60,11 @@ class DispatcherMonitor extends Page
     public ?int $upravljanjeNoviClanId = null;
     public string $upravljanjeNovaUloga = 'clan';
     public string $upravljanjeNoviZadatak = '';
+    public ?int $upravljanjeNovoVoziloId = null;
 
     public string $novaNapomenaTip = 'biljeska';
     public string $novaNapomenaSadrzaj = '';
 
-    // Nova / Uredi dojava — hijerarhijska adresa (zajednički state)
     public ?int $urediDojavaId = null;
     public string $novaDojavaTip = 'pozar';
     public string $novaDojavaPrioritet = 'standardna';
@@ -127,6 +129,7 @@ class DispatcherMonitor extends Page
         $this->upravljanjeNoviClanId = null;
         $this->upravljanjeNovaUloga = 'clan';
         $this->upravljanjeNoviZadatak = '';
+        $this->upravljanjeNovoVoziloId = null;
         $this->resetirajNovuDojavu();
     }
 
@@ -137,6 +140,7 @@ class DispatcherMonitor extends Page
         $this->modalData = [];
         $this->upravljanjeNoviClanId = null;
         $this->upravljanjeNovaUloga = 'clan';
+        $this->upravljanjeNovoVoziloId = null;
         $tim = Tim::find($timId);
         $this->upravljanjeNoviZadatak = $tim?->zadatak ?? '';
     }
@@ -148,6 +152,7 @@ class DispatcherMonitor extends Page
             'bazaPostrojba', 
             'zapovjednik', 
             'trenutniClanovi.vatrogasac.postrojba',
+            'trenutnaVozila.vozilo.postrojba',
         ])->find($this->upravljaniTimId);
     }
 
@@ -206,6 +211,99 @@ class DispatcherMonitor extends Page
         Notification::make()->title('Zadatak ažuriran')->success()->send();
     }
 
+    public function dodajVoziloUTim(): void
+    {
+        $tim = $this->upravljaniTim;
+        if (!$tim) return;
+
+        if (!$this->upravljanjeNovoVoziloId) {
+            Notification::make()->title('Odaberi vozilo')->warning()->send();
+            return;
+        }
+
+        $vec = TimVozilo::where('tim_id', $tim->id)
+            ->where('vozilo_id', $this->upravljanjeNovoVoziloId)
+            ->whereNull('skinuto_u')
+            ->exists();
+        
+        if ($vec) {
+            Notification::make()->title('Vozilo je već u timu')->warning()->send();
+            return;
+        }
+
+        // Provjeri je li vozilo već dodijeljeno drugom timu
+        $drugiTim = TimVozilo::where('vozilo_id', $this->upravljanjeNovoVoziloId)
+            ->where('tim_id', '!=', $tim->id)
+            ->whereNull('skinuto_u')
+            ->with('tim')
+            ->first();
+        
+        if ($drugiTim) {
+            Notification::make()
+                ->title('Vozilo nije dostupno')
+                ->body("Vozilo je trenutno u timu '{$drugiTim->tim?->naziv}'.")
+                ->warning()
+                ->send();
+            return;
+        }
+
+        TimVozilo::create([
+            'tim_id' => $tim->id,
+            'vozilo_id' => $this->upravljanjeNovoVoziloId,
+            'dodano_u' => now(),
+        ]);
+
+        $this->upravljanjeNovoVoziloId = null;
+
+        Notification::make()->title('Vozilo dodano u tim')->success()->send();
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function ukloniVoziloIzTima(int $timVoziloId): void
+    {
+        $tv = TimVozilo::find($timVoziloId);
+        if (!$tv) return;
+
+        $tv->update(['skinuto_u' => now()]);
+
+        Notification::make()->title('Vozilo uklonjeno iz tima')->success()->send();
+        $this->dispatch('osvjeziMapu');
+    }
+
+    public function getVozilaOpcijeProperty(): array
+    {
+        $tim = $this->upravljaniTim;
+        $bazaPostrojbaId = $tim?->baza_postrojba_id;
+
+        // Vozila iz iste baze prvo, onda ostala
+        $vozila = Vozilo::where('aktivno', true)
+            ->where('status', 'operativno')
+            ->with('postrojba')
+            ->orderByRaw($bazaPostrojbaId ? "(postrojba_id = ?) DESC" : "id ASC", $bazaPostrojbaId ? [$bazaPostrojbaId] : [])
+            ->orderBy('registracija')
+            ->get();
+
+        // Filter — izbaci vozila koja su već u drugim timovima (osim ovog)
+        $zauzeti = TimVozilo::whereNull('skinuto_u')
+            ->when($tim, fn($q) => $q->where('tim_id', '!=', $tim->id))
+            ->pluck('vozilo_id')
+            ->toArray();
+
+        return $vozila
+            ->filter(fn($v) => !in_array($v->id, $zauzeti))
+            ->mapWithKeys(function ($v) use ($bazaPostrojbaId) {
+                $marker = $v->postrojba_id == $bazaPostrojbaId ? '⭐ ' : '';
+                $tipKratko = strtoupper($v->tip ?? '?');
+                return [
+                    $v->id => $marker . $v->registracija 
+                        . ' • ' . $tipKratko 
+                        . ' • ' . $v->marka . ($v->model ? ' ' . $v->model : '')
+                        . ' (' . ($v->postrojba?->skraceni_naziv ?? $v->postrojba?->naziv ?? '?') . ')'
+                ];
+            })
+            ->toArray();
+    }
+
     // ===== NOVA DOJAVA =====
 
     public function otvoriNovuDojavu(): void
@@ -228,7 +326,6 @@ class DispatcherMonitor extends Page
         $this->novaDojavaOpis = $dojava->opis ?? '';
         $this->novaDojavaStatus = $dojava->status ?? 'zaprimljena';
         
-        // Resetiraj adresne korake
         $this->novaDojavaNaseljePretraga = '';
         $this->novaDojavaNaseljeId = null;
         $this->novaDojavaNaseljeNaziv = '';
@@ -243,7 +340,6 @@ class DispatcherMonitor extends Page
         $this->novaDojavaLatitude = $dojava->latitude ? (float) $dojava->latitude : null;
         $this->novaDojavaLongitude = $dojava->longitude ? (float) $dojava->longitude : null;
         
-        // Pokušaj učitati naselje/ulicu/kb iz baze ako postoje kolone
         $kolone = \Schema::getColumnListing('dojavas');
         
         if (in_array('naselje_id', $kolone) && $dojava->naselje_id) {
