@@ -7,6 +7,7 @@ use App\Models\Dojava;
 use App\Models\Postrojba;
 use App\Models\Tim;
 use App\Models\TimClanstvo;
+use App\Models\TimRezervacija;
 use App\Models\TimStatusLog;
 use App\Models\TimVozilo;
 use App\Models\Vatrogasac;
@@ -28,7 +29,7 @@ class EditIntervencija extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            // ===== NOVI TIM (ad-hoc, od nule) =====
+            // ===== NOVI TIM =====
             Action::make('noviTim')
                 ->label('➕ Novi tim')
                 ->color('success')
@@ -101,7 +102,7 @@ class EditIntervencija extends EditRecord
                         ->send();
                 }),
 
-            // ===== POŠALJI POSTOJEĆI TIM (iz baze ili s druge intervencije) =====
+            // ===== POŠALJI POSTOJEĆI TIM =====
             Action::make('posaljiPostojeciTim')
                 ->label('🚒 Pošalji tim')
                 ->color('info')
@@ -169,6 +170,88 @@ class EditIntervencija extends EditRecord
                         ->send();
                 }),
 
+            // ===== REZERVIRAJ TIM =====
+            Action::make('rezervirajTim')
+                ->label('📌 Rezerviraj tim')
+                ->color('warning')
+                ->button()
+                ->modalHeading('Rezerviraj tim za ovu intervenciju')
+                ->modalDescription('Tim ostaje gdje jeste — kad se oslobodi, dispečer ga ručno premjesti ovamo.')
+                ->modalSubmitActionLabel('Rezerviraj')
+                ->schema([
+                    Select::make('tim_id')
+                        ->label('Tim za rezervaciju')
+                        ->options(function () {
+                            return Tim::where('trenutni_status', '!=', 'raspusten')
+                                ->where(function ($q) {
+                                    $q->whereNull('intervencija_id')
+                                      ->orWhere('intervencija_id', '!=', $this->record->id);
+                                })
+                                ->with(['bazaPostrojba', 'zapovjednik', 'trenutniClanovi', 'intervencija'])
+                                ->orderBy('naziv')
+                                ->get()
+                                ->mapWithKeys(function ($t) {
+                                    $brojClanova = $t->trenutniClanovi->count();
+                                    $gdje = $t->intervencija_id 
+                                        ? '🔥 na: ' . ($t->intervencija?->naziv ? Str::limit($t->intervencija->naziv, 25) : '?')
+                                        : '🏠 u bazi';
+                                    return [
+                                        $t->id => $t->naziv 
+                                            . ' (' . ($t->bazaPostrojba?->skraceni_naziv ?? $t->bazaPostrojba?->naziv ?? '?') . ')'
+                                            . ' • ' . $brojClanova . ' članova'
+                                            . ' • ' . $gdje
+                                    ];
+                                })
+                                ->toArray();
+                        })
+                        ->searchable()
+                        ->required(),
+                    
+                    Textarea::make('napomena')
+                        ->label('Napomena (opcionalno)')
+                        ->rows(2)
+                        ->placeholder('Razlog rezervacije, prioritet, itd.'),
+                ])
+                ->action(function (array $data) {
+                    $tim = Tim::find($data['tim_id']);
+                    if (!$tim) return;
+
+                    $vec = TimRezervacija::where('tim_id', $tim->id)
+                        ->where('intervencija_id', $this->record->id)
+                        ->whereNull('aktivirano_u')
+                        ->whereNull('otkazano_u')
+                        ->exists();
+                    
+                    if ($vec) {
+                        Notification::make()
+                            ->title('Već rezervirano')
+                            ->body("Tim '{$tim->naziv}' već ima aktivnu rezervaciju za ovu intervenciju.")
+                            ->warning()
+                            ->send();
+                        return;
+                    }
+
+                    $sljedeci = TimRezervacija::where('tim_id', $tim->id)
+                        ->whereNull('aktivirano_u')
+                        ->whereNull('otkazano_u')
+                        ->max('redni_broj') ?? 0;
+                    
+                    TimRezervacija::create([
+                        'tim_id' => $tim->id,
+                        'intervencija_id' => $this->record->id,
+                        'redni_broj' => $sljedeci + 1,
+                        'rezervirao_id' => auth()->id(),
+                        'rezervirano_u' => now(),
+                        'napomena' => $data['napomena'] ?? null,
+                    ]);
+
+                    Notification::make()
+                        ->title('Tim rezerviran')
+                        ->body("Tim '{$tim->naziv}' je dodan u red čekanja za ovu intervenciju.")
+                        ->success()
+                        ->send();
+                }),
+
             // ===== DODAJ POSTOJEĆU DOJAVU =====
             Action::make('dodajDojavu')
                 ->label('📞 Dodaj dojavu')
@@ -200,8 +283,7 @@ class EditIntervencija extends EditRecord
                                 ->toArray();
                         })
                         ->searchable()
-                        ->required()
-                        ->helperText('Pretraži po broju ili adresi'),
+                        ->required(),
                 ])
                 ->action(function (array $data) {
                     $dojava = Dojava::find($data['dojava_id']);
@@ -225,14 +307,24 @@ class EditIntervencija extends EditRecord
                 ->color('gray')
                 ->visible(fn () => $this->record->status === 'aktivna')
                 ->requiresConfirmation()
+                ->modalDescription('Intervencija će biti zatvorena. Aktivne rezervacije za ovu intervenciju će biti automatski otkazane.')
                 ->action(function () {
                     $this->record->update([
                         'status' => 'zatvorena',
                         'vrijeme_zatvaranja' => now(),
                     ]);
 
+                    TimRezervacija::where('intervencija_id', $this->record->id)
+                        ->whereNull('aktivirano_u')
+                        ->whereNull('otkazano_u')
+                        ->update([
+                            'otkazano_u' => now(),
+                            'razlog_otkazivanja' => 'intervencija_zatvorena',
+                        ]);
+
                     Notification::make()
                         ->title('Intervencija zatvorena')
+                        ->body('Aktivne rezervacije timova su automatski otkazane.')
                         ->success()
                         ->send();
                 }),
@@ -254,6 +346,23 @@ class EditIntervencija extends EditRecord
     public function timZavrsili(int $timId): void
     {
         $this->promijeniStatusTima($timId, 'intervencija_zavrsena', 'Tim završio intervenciju');
+        
+        $tim = Tim::find($timId);
+        if ($tim) {
+            $brojRezervacija = TimRezervacija::where('tim_id', $timId)
+                ->whereNull('aktivirano_u')
+                ->whereNull('otkazano_u')
+                ->count();
+            
+            if ($brojRezervacija > 0) {
+                Notification::make()
+                    ->title('Tim ima rezervacije')
+                    ->body("Tim '{$tim->naziv}' ima {$brojRezervacija} rezervacija. Dispečer može ručno aktivirati sljedeću.")
+                    ->warning()
+                    ->persistent()
+                    ->send();
+            }
+        }
     }
 
     public function timPovratak(int $timId): void
@@ -284,7 +393,68 @@ class EditIntervencija extends EditRecord
             ->send();
     }
 
-    // ===== COMPUTED METODE ZA BLADE =====
+    public function aktivirajRezervaciju(int $rezervacijaId): void
+    {
+        $rez = TimRezervacija::with('tim')->find($rezervacijaId);
+        if (!$rez || !$rez->jeAktivna()) {
+            return;
+        }
+
+        $tim = $rez->tim;
+        if (!$tim) return;
+
+        $tim->update([
+            'intervencija_id' => $rez->intervencija_id,
+            'trenutni_status' => 'polazak',
+        ]);
+
+        TimStatusLog::create([
+            'tim_id' => $tim->id,
+            'status' => 'polazak',
+            'vrijeme' => now(),
+            'autor_id' => auth()->id(),
+            'intervencija_id' => $rez->intervencija_id,
+            'napomena' => 'Aktivirana rezervacija — tim premješten',
+        ]);
+
+        $rez->update(['aktivirano_u' => now()]);
+
+        TimRezervacija::where('tim_id', $tim->id)
+            ->whereNull('aktivirano_u')
+            ->whereNull('otkazano_u')
+            ->where('redni_broj', '>', $rez->redni_broj)
+            ->decrement('redni_broj');
+
+        Notification::make()
+            ->title('Rezervacija aktivirana')
+            ->body("Tim '{$tim->naziv}' je premješten na ovu intervenciju.")
+            ->success()
+            ->send();
+    }
+
+    public function otkaziRezervaciju(int $rezervacijaId): void
+    {
+        $rez = TimRezervacija::find($rezervacijaId);
+        if (!$rez || !$rez->jeAktivna()) return;
+
+        $rez->update([
+            'otkazano_u' => now(),
+            'razlog_otkazivanja' => 'rucno',
+        ]);
+
+        TimRezervacija::where('tim_id', $rez->tim_id)
+            ->whereNull('aktivirano_u')
+            ->whereNull('otkazano_u')
+            ->where('redni_broj', '>', $rez->redni_broj)
+            ->decrement('redni_broj');
+
+        Notification::make()
+            ->title('Rezervacija otkazana')
+            ->success()
+            ->send();
+    }
+
+    // ===== COMPUTED METODE =====
 
     public function getTimoviProperty()
     {
@@ -294,6 +464,7 @@ class EditIntervencija extends EditRecord
                 'bazaPostrojba',
                 'trenutniClanovi.vatrogasac.postrojba',
                 'trenutnaVozila.vozilo.postrojba',
+                'aktivneRezervacije.intervencija',
             ])
             ->orderByRaw("CASE trenutni_status
                 WHEN 'na_mjestu' THEN 1
@@ -323,6 +494,16 @@ class EditIntervencija extends EditRecord
     {
         return Dojava::where('intervencija_id', $this->record->id)
             ->orderBy('vrijeme_zaprimanja', 'desc')
+            ->get();
+    }
+
+    public function getRezervacijeZaOvuIntervencijuProperty()
+    {
+        return TimRezervacija::where('intervencija_id', $this->record->id)
+            ->whereNull('aktivirano_u')
+            ->whereNull('otkazano_u')
+            ->with(['tim.bazaPostrojba', 'tim.intervencija', 'tim.trenutniClanovi', 'rezervirao'])
+            ->orderBy('rezervirano_u')
             ->get();
     }
 

@@ -75,6 +75,25 @@ class Intervencija extends Model
         return $this->hasMany(TimStatusLog::class);
     }
 
+    /**
+     * Rezervacije timova za ovu intervenciju.
+     */
+    public function rezervacije(): HasMany
+    {
+        return $this->hasMany(TimRezervacija::class);
+    }
+
+    /**
+     * Aktivne rezervacije (timovi čekaju da budu prebačeni).
+     */
+    public function aktivneRezervacije(): HasMany
+    {
+        return $this->hasMany(TimRezervacija::class)
+            ->whereNull('aktivirano_u')
+            ->whereNull('otkazano_u')
+            ->orderBy('rezervirano_u');
+    }
+
     // SCOPE
 
     public function scopeAktivne($query)

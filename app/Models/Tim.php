@@ -72,6 +72,25 @@ class Tim extends Model
         return $this->hasMany(TimStatusLog::class)->orderBy('vrijeme', 'desc');
     }
 
+    /**
+     * Sve rezervacije (povijest + aktivne).
+     */
+    public function rezervacije(): HasMany
+    {
+        return $this->hasMany(TimRezervacija::class);
+    }
+
+    /**
+     * Aktivne rezervacije (red čekanja).
+     */
+    public function aktivneRezervacije(): HasMany
+    {
+        return $this->hasMany(TimRezervacija::class)
+            ->whereNull('aktivirano_u')
+            ->whereNull('otkazano_u')
+            ->orderBy('redni_broj');
+    }
+
     // SCOPE
 
     public function scopeAktivni($query)
