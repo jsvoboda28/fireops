@@ -9,6 +9,7 @@ use App\Models\TimStatusLog;
 use BackedEnum;
 use Filament\Pages\Page;
 use Filament\Support\Enums\Width;
+use Livewire\Attributes\Url;
 
 class DispatcherMonitor extends Page
 {
@@ -27,6 +28,50 @@ class DispatcherMonitor extends Page
     public Width|string|null $maxContentWidth = Width::Full;
 
     protected ?string $pollingInterval = '30s';
+
+    /**
+     * URL parametar koji drži trenutno odabrani detalj
+     * Format: "dojava:5" ili "intervencija:3" ili null
+     */
+    #[Url(as: 'detalji')]
+    public ?string $odabrano = null;
+
+    public function odaberi(string $tip, int $id): void
+    {
+        $this->odabrano = "{$tip}:{$id}";
+    }
+
+    public function zatvoriDetalje(): void
+    {
+        $this->odabrano = null;
+    }
+
+    public function getOdabranTipProperty(): ?string
+    {
+        if (!$this->odabrano) return null;
+        return explode(':', $this->odabrano)[0] ?? null;
+    }
+
+    public function getOdabranIdProperty(): ?int
+    {
+        if (!$this->odabrano) return null;
+        $parts = explode(':', $this->odabrano);
+        return isset($parts[1]) ? (int) $parts[1] : null;
+    }
+
+    public function getOdabranaDojavaProperty(): ?Dojava
+    {
+        if ($this->odabranTip !== 'dojava' || !$this->odabranId) return null;
+        return Dojava::with(['jls', 'intervencija', 'operater'])
+            ->find($this->odabranId);
+    }
+
+    public function getOdabranaIntervencijaProperty(): ?Intervencija
+    {
+        if ($this->odabranTip !== 'intervencija' || !$this->odabranId) return null;
+        return Intervencija::with(['jls', 'voditelj', 'timovi.zapovjednik', 'timovi.trenutniClanovi', 'dojave'])
+            ->find($this->odabranId);
+    }
 
     public function getViewData(): array
     {
@@ -78,6 +123,8 @@ class DispatcherMonitor extends Page
             'brojDojava' => $dojave->count(),
             'brojIntervencija' => $intervencije->count(),
             'brojTimova' => Tim::where('trenutni_status', '!=', 'raspusten')->count(),
+            'odabranaDojava' => $this->odabranaDojava,
+            'odabranaIntervencija' => $this->odabranaIntervencija,
         ];
     }
 }
