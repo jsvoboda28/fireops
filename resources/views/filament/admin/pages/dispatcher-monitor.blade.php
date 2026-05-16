@@ -78,7 +78,6 @@
 
         <div style="position: fixed; top: 64px; left: 0; right: 0; bottom: 0; background: #F1F5F9; display: flex; flex-direction: column;">
             
-            {{-- ===== TOP BAR ===== --}}
             <div style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); padding: 10px 18px; flex-shrink: 0; color: white; box-shadow: 0 2px 12px rgba(0,0,0,0.15);">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
                     
@@ -135,13 +134,10 @@
                 </div>
             </div>
 
-            {{-- ===== MASTER-DETAIL LAYOUT ===== --}}
             <div style="display: grid; grid-template-columns: 420px 1fr 320px; gap: 8px; padding: 8px; flex: 1; min-height: 0; overflow: hidden;">
                 
-                {{-- ===== LIJEVO: LISTA (master) ===== --}}
                 <div style="background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); border: 1px solid #E2E8F0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     
-                    {{-- TAB SWITCHER --}}
                     <div style="display: flex; border-bottom: 1px solid #E2E8F0; flex-shrink: 0; background: #F8FAFC;">
                         <button class="fo-tab-btn active" id="tab-sve" onclick="window.fireopsPostaviTab('sve')">
                             📋 SVE ({{ $brojDojava + $brojIntervencija }})
@@ -154,7 +150,6 @@
                         </button>
                     </div>
                     
-                    {{-- SEARCH + FILTERI --}}
                     <div style="padding: 10px 12px; border-bottom: 1px solid #E2E8F0; flex-shrink: 0;">
                         <input type="text" id="master-search" placeholder="🔍 Traži po adresi, broju, JLS..." class="fo-input" style="font-size: 12px; margin-bottom: 8px;">
                         <div style="display: flex; gap: 4px; flex-wrap: wrap;">
@@ -165,10 +160,8 @@
                         </div>
                     </div>
                     
-                    {{-- LISTA --}}
                     <div class="fo-scroll" id="master-list" style="overflow-y: auto; flex: 1;">
                         @php
-                            // Spoji dojave i intervencije u jedan popis, sortiraj po prioritetu i vremenu
                             $sviItems = collect();
                             foreach($intervencije as $int) {
                                 $sviItems->push(['tip' => 'intervencija', 'data' => $int, 'prioritet' => $int->prioritet, 'vrijeme' => $int->vrijeme_otvaranja]);
@@ -267,7 +260,6 @@
                     </div>
                 </div>
 
-                {{-- ===== SREDINA: RADNI PANEL (detail) ===== --}}
                 <div style="background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); border: 1px solid #E2E8F0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     
                     @if($odabranaDojava)
@@ -275,7 +267,6 @@
                     @elseif($odabranaIntervencija)
                         @include('filament.admin.pages._dispatch-intervencija-detail', ['intervencija' => $odabranaIntervencija])
                     @else
-                        {{-- WELCOME / EMPTY STATE --}}
                         <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center;">
                             <div style="font-size: 72px; margin-bottom: 16px; opacity: 0.4;">📋</div>
                             <div style="font-size: 18px; font-weight: 800; color: #475569; margin-bottom: 6px;">Odaberi stavku lijevo</div>
@@ -296,7 +287,6 @@
                     @endif
                 </div>
 
-                {{-- ===== DESNO: TIMELINE ===== --}}
                 <div style="background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04); border: 1px solid #E2E8F0; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
                     
                     <div style="padding: 10px 12px; border-bottom: 1px solid #E2E8F0; flex-shrink: 0;">
@@ -345,9 +335,24 @@
                 </div>
             </div>
         </div>
+
+        @if($aktivniModal === 'noviTim')
+            @include('filament.admin.pages._dispatch-modal-novi-tim')
+        @endif
+        @if($aktivniModal === 'posaljiTim')
+            @include('filament.admin.pages._dispatch-modal-posalji-tim')
+        @endif
+        @if($aktivniModal === 'rezervirajTim')
+            @include('filament.admin.pages._dispatch-modal-rezerviraj-tim')
+        @endif
+        @if($aktivniModal === 'dodajDojavu')
+            @include('filament.admin.pages._dispatch-modal-dodaj-dojavu')
+        @endif
     </div>
 
     @push('scripts')
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script>
             (function() {
                 const upd = () => {
@@ -409,6 +414,93 @@
                     localStorage.setItem('fireops:zoom-mapa', JSON.stringify(payload));
                     window.dispatchEvent(new StorageEvent('storage', { key: 'fireops:zoom-mapa', newValue: JSON.stringify(payload) }));
                 };
+
+                document.addEventListener('livewire:initialized', () => {
+                    if (window.Livewire) {
+                        window.Livewire.on('osvjeziMapu', () => {
+                            const payload = { timestamp: Date.now() };
+                            localStorage.setItem('fireops:refresh-mapa', JSON.stringify(payload));
+                        });
+                    }
+                });
+                
+                const initMiniMapa = () => {
+                    if (typeof L === 'undefined') return;
+                    
+                    document.querySelectorAll('[id^="fo-mini-mapa-"]').forEach(el => {
+                        if (el._leaflet_initialized) return;
+                        el._leaflet_initialized = true;
+                        
+                        const lat = parseFloat(el.dataset.intLat);
+                        const lng = parseFloat(el.dataset.intLng);
+                        const naziv = el.dataset.intNaziv || '';
+                        let timovi = [];
+                        try {
+                            timovi = JSON.parse(el.dataset.timovi || '[]');
+                        } catch(e) {}
+                        
+                        if (!lat || !lng) {
+                            el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:white;font-size:11px;font-weight:600;padding:10px;text-align:center;">📍 Bez GPS koordinata</div>';
+                            return;
+                        }
+                        
+                        const mapa = L.map(el, { zoomControl: true, attributionControl: false }).setView([lat, lng], 15);
+                        
+                        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                            maxZoom: 19,
+                        }).addTo(mapa);
+                        
+                        const intIcon = L.divIcon({
+                            className: 'fo-int-pin',
+                            html: '<div style="width:20px;height:20px;background:#DC2626;border:3px solid white;border-radius:4px;box-shadow:0 0 0 2px #DC2626, 0 2px 8px rgba(0,0,0,0.6);"></div>',
+                            iconSize: [26, 26],
+                            iconAnchor: [13, 13],
+                        });
+                        L.marker([lat, lng], { icon: intIcon }).addTo(mapa).bindPopup('<b>🔥 ' + naziv + '</b>');
+                        
+                        timovi.forEach((t, idx) => {
+                            let timLat, timLng;
+                            if (t.status === 'polazak') {
+                                timLat = t.baza_lat ? parseFloat(t.baza_lat) : lat;
+                                timLng = t.baza_lng ? parseFloat(t.baza_lng) : lng;
+                            } else if (t.status === 'na_mjestu') {
+                                const offset = (idx % 8) * 0.00008;
+                                timLat = lat + offset;
+                                timLng = lng + offset;
+                            } else if (t.status === 'povratak') {
+                                timLat = t.baza_lat ? (parseFloat(t.baza_lat) + lat) / 2 : lat;
+                                timLng = t.baza_lng ? (parseFloat(t.baza_lng) + lng) / 2 : lng;
+                            } else {
+                                return;
+                            }
+                            
+                            if (!timLat || !timLng) return;
+                            
+                            const timIcon = L.divIcon({
+                                className: 'fo-tim-pin',
+                                html: '<div style="font-size:20px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">🚒</div>',
+                                iconSize: [24, 24],
+                                iconAnchor: [12, 12],
+                            });
+                            L.marker([timLat, timLng], { icon: timIcon })
+                                .addTo(mapa)
+                                .bindPopup('<b>' + t.naziv + '</b><br><small>' + (t.status || '').replace(/_/g, ' ').toUpperCase() + '</small>');
+                        });
+                    });
+                };
+                
+                const probajIniMapu = () => {
+                    if (typeof L !== 'undefined') {
+                        initMiniMapa();
+                    } else {
+                        setTimeout(probajIniMapu, 200);
+                    }
+                };
+                
+                document.addEventListener('livewire:initialized', probajIniMapu);
+                document.addEventListener('livewire:updated', probajIniMapu);
+                setTimeout(probajIniMapu, 500);
+                setInterval(probajIniMapu, 2000);
             })();
         </script>
     @endpush

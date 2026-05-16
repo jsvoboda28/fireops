@@ -94,6 +94,14 @@ class Intervencija extends Model
             ->orderBy('rezervirano_u');
     }
 
+    /**
+     * Napomene / dnevnik / opažanja za ovu intervenciju.
+     */
+    public function napomene(): HasMany
+    {
+        return $this->hasMany(IntervencijaNapomena::class)->orderBy('vrijeme', 'desc');
+    }
+
     // SCOPE
 
     public function scopeAktivne($query)
