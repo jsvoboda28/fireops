@@ -3,20 +3,20 @@
 namespace App\Filament\Admin\Pages;
 
 use App\Models\Dojava;
-use App\Models\OperativniDogadjaj;
-use App\Models\Postrojba;
+use App\Models\Intervencija;
+use App\Models\Tim;
+use App\Models\TimStatusLog;
 use BackedEnum;
 use Filament\Pages\Page;
 use Filament\Support\Enums\Width;
-use UnitEnum;
 
 class DispatcherMonitor extends Page
 {
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-presentation-chart-line';
     
-    protected static ?string $navigationLabel = 'Dispečerski monitor';
+    protected static ?string $navigationLabel = 'Dispečerski centar';
     
-    protected static ?string $title = 'Dispečerski monitor';
+    protected static ?string $title = 'Dispečerski centar';
     
     protected static ?int $navigationSort = -10;
 
@@ -32,7 +32,7 @@ class DispatcherMonitor extends Page
     {
         $dojave = Dojava::query()
             ->whereIn('status', ['zaprimljena', 'dodijeljena', 'u_tijeku'])
-            ->with(['jls', 'dogadjaj'])
+            ->with(['jls', 'intervencija'])
             ->orderByRaw("CASE prioritet 
                 WHEN 'kriticna' THEN 1 
                 WHEN 'visoka' THEN 2 
@@ -42,72 +42,42 @@ class DispatcherMonitor extends Page
             ->latest('vrijeme_zaprimanja')
             ->get();
 
-        $dogadjaji = OperativniDogadjaj::query()
-            ->whereIn('status', ['aktivan', 'pracenje'])
-            ->withCount('dojave')
-            ->with(['jls', 'voditelj'])
-            ->orderByRaw("CASE status WHEN 'aktivan' THEN 1 WHEN 'pracenje' THEN 2 ELSE 3 END")
+        $intervencije = Intervencija::query()
+            ->where('status', 'aktivna')
+            ->with(['jls', 'voditelj', 'timovi.zapovjednik', 'timovi.trenutniClanovi'])
+            ->orderByRaw("CASE prioritet 
+                WHEN 'kriticna' THEN 1 
+                WHEN 'visoka' THEN 2 
+                ELSE 3 
+            END")
             ->latest('vrijeme_otvaranja')
             ->get();
 
-        $postrojbe = Postrojba::query()
-            ->whereNotNull('latitude')
-            ->whereNotNull('longitude')
-            ->where('aktivna', true)
-            ->with('jls')
+        $timeline = TimStatusLog::query()
+            ->with(['tim', 'intervencija', 'autor'])
+            ->orderBy('vrijeme', 'desc')
+            ->limit(50)
             ->get();
 
-        $aktivnihDogadjaja = OperativniDogadjaj::where('status', 'aktivan')->count();
-        $kritickihDojava = Dojava::where('prioritet', 'kriticna')
-            ->whereIn('status', ['zaprimljena', 'dodijeljena', 'u_tijeku'])
-            ->count();
+        $brojKritickih = $dojave->where('prioritet', 'kriticna')->count();
+        $brojAktivnihIntervencija = $intervencije->count();
 
-        if ($kritickihDojava > 0 || $aktivnihDogadjaja >= 3) {
-            $stanje = ['naslov' => 'KRITIČNO STANJE', 'boja' => '#DC2626'];
-        } elseif ($aktivnihDogadjaja > 0) {
-            $stanje = ['naslov' => 'AKTIVNO STANJE', 'boja' => '#F97316'];
+        if ($brojKritickih > 0 || $brojAktivnihIntervencija >= 5) {
+            $stanje = ['naslov' => 'KRITIČNO', 'boja' => '#DC2626'];
+        } elseif ($brojAktivnihIntervencija > 0) {
+            $stanje = ['naslov' => 'AKTIVNO', 'boja' => '#F97316'];
         } else {
             $stanje = ['naslov' => 'PRIPRAVNOST', 'boja' => '#059669'];
         }
 
-        // Detaljni podaci za detalje panel
-        $mapaData = [
-            'postrojbe' => $postrojbe->map(fn($p) => [
-                'id' => $p->id,
-                'naziv' => $p->naziv,
-                'tip' => $p->tip ?? 'ostalo',
-                'lat' => (float) $p->latitude,
-                'lng' => (float) $p->longitude,
-                'operativna' => (bool) ($p->operativno_spremna ?? false),
-                'adresa' => $p->adresa ?? '—',
-                'jls' => $p->jls?->naziv ?? '—',
-                'telefon' => $p->telefon ?? null,
-            ])->toArray(),
-            'dojave' => $dojave->filter(fn($d) => $d->latitude && $d->longitude)->map(fn($d) => [
-                'id' => $d->id,
-                'broj' => $d->broj_dojave,
-                'adresa' => $d->adresa,
-                'prioritet' => $d->prioritet,
-                'tip' => $d->tip_nepogode,
-                'status' => $d->status,
-                'opis' => $d->opis,
-                'jls' => $d->jls?->naziv ?? '—',
-                'ugrozenost' => $d->ugrozenost_ljudi,
-                'vrijeme' => $d->vrijeme_zaprimanja->format('d.m.Y H:i'),
-                'protekloMinuta' => $d->vrijeme_zaprimanja->diffInMinutes(now()),
-                'lat' => (float) $d->latitude,
-                'lng' => (float) $d->longitude,
-            ])->values()->toArray(),
-        ];
-
         return [
             'dojave' => $dojave,
-            'dogadjaji' => $dogadjaji,
+            'intervencije' => $intervencije,
+            'timeline' => $timeline,
             'stanje' => $stanje,
             'brojDojava' => $dojave->count(),
-            'brojDogadjaja' => $dogadjaji->count(),
-            'brojPostrojbi' => $postrojbe->count(),
-            'mapaData' => json_encode($mapaData, JSON_UNESCAPED_UNICODE),
+            'brojIntervencija' => $intervencije->count(),
+            'brojTimova' => Tim::where('trenutni_status', '!=', 'raspusten')->count(),
         ];
     }
 }
