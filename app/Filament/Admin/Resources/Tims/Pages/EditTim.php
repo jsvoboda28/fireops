@@ -5,7 +5,9 @@ namespace App\Filament\Admin\Resources\Tims\Pages;
 use App\Filament\Admin\Resources\Tims\TimResource;
 use App\Models\TimClanstvo;
 use App\Models\TimStatusLog;
+use App\Models\TimVozilo;
 use App\Models\Vatrogasac;
+use App\Models\Vozilo;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
@@ -23,7 +25,7 @@ class EditTim extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            // ===== DODAJ VATROGASCA U TIM =====
+            // ===== DODAJ VATROGASCA =====
             Action::make('dodajVatrogasca')
                 ->label('➕ Dodaj vatrogasca')
                 ->color('success')
@@ -34,7 +36,6 @@ class EditTim extends EditRecord
                     Select::make('vatrogasac_id')
                         ->label('Vatrogasac')
                         ->options(function () {
-                            // ID-ovi vatrogasaca koji su VEĆ u ovom timu (da se ne mogu dvostruko dodati)
                             $vecUTimu = TimClanstvo::where('tim_id', $this->record->id)
                                 ->whereNull('izasao_u')
                                 ->pluck('vatrogasac_id')
@@ -85,6 +86,56 @@ class EditTim extends EditRecord
                         ->send();
                 }),
 
+            // ===== DODAJ VOZILO =====
+            Action::make('dodajVozilo')
+                ->label('🚒 Dodaj vozilo')
+                ->color('warning')
+                ->modalHeading('Dodaj vozilo u tim')
+                ->modalDescription('Pretraži vozilo — možeš odabrati iz BILO KOJE postrojbe.')
+                ->modalSubmitActionLabel('Dodaj vozilo')
+                ->schema([
+                    Select::make('vozilo_id')
+                        ->label('Vozilo')
+                        ->options(function () {
+                            $vecUTimu = TimVozilo::where('tim_id', $this->record->id)
+                                ->whereNull('skinuto_u')
+                                ->pluck('vozilo_id')
+                                ->toArray();
+
+                            return Vozilo::where('aktivno', true)
+                                ->whereNotIn('id', $vecUTimu)
+                                ->with('postrojba')
+                                ->orderBy('registracija')
+                                ->get()
+                                ->mapWithKeys(fn ($v) => [
+                                    $v->id => ($v->registracija ?? '?') . ' • ' . ($v->marka ?? '') . ' ' . ($v->model ?? '') . ' • ' . ($v->postrojba?->naziv ?? '?')
+                                ])
+                                ->toArray();
+                        })
+                        ->searchable()
+                        ->required(),
+                    
+                    Textarea::make('napomena')
+                        ->label('Napomena (opcionalno)')
+                        ->rows(2),
+                ])
+                ->action(function (array $data) {
+                    TimVozilo::create([
+                        'tim_id' => $this->record->id,
+                        'vozilo_id' => $data['vozilo_id'],
+                        'dodano_u' => now(),
+                        'napomena' => $data['napomena'] ?? null,
+                    ]);
+
+                    $vozilo = Vozilo::find($data['vozilo_id']);
+
+                    Notification::make()
+                        ->title('Vozilo dodano')
+                        ->body(($vozilo->registracija ?? '?') . ' je dodano u tim ' . $this->record->naziv)
+                        ->success()
+                        ->send();
+                }),
+
             // ===== PROMIJENI STATUS =====
             ActionGroup::make([
                 Action::make('statusPolazak')
@@ -127,21 +178,18 @@ class EditTim extends EditRecord
                     ->label('🚪 Raspusti tim')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->modalDescription('Tim će biti raspušten. Svi članovi će automatski izaći iz tima.')
+                    ->modalDescription('Tim će biti raspušten. Svi članovi i vozila će automatski izaći.')
                     ->action(function () {
                         $this->promijeniStatus('raspusten', 'Tim raspušten');
                         
-                        // Sve aktivne članove iznesi iz tima
                         TimClanstvo::where('tim_id', $this->record->id)
                             ->whereNull('izasao_u')
                             ->update(['izasao_u' => now()]);
                         
-                        // Sva aktivna vozila iznesi iz tima
-                        \App\Models\TimVozilo::where('tim_id', $this->record->id)
+                        TimVozilo::where('tim_id', $this->record->id)
                             ->whereNull('skinuto_u')
                             ->update(['skinuto_u' => now()]);
                         
-                        // Postavi vrijeme raspuštanja
                         $this->record->update([
                             'vrijeme_raspustanja' => now(),
                         ]);
@@ -156,7 +204,7 @@ class EditTim extends EditRecord
     }
 
     /**
-     * Pomoćna funkcija — promjena statusa tima + log.
+     * Promjena statusa tima + log.
      */
     protected function promijeniStatus(string $noviStatus, string $opis): void
     {
@@ -181,7 +229,7 @@ class EditTim extends EditRecord
     }
 
     /**
-     * Akcija — Skini vatrogasca iz tima.
+     * Skini vatrogasca iz tima.
      */
     public function skiniClana(int $clanstvoId): void
     {
@@ -199,6 +247,25 @@ class EditTim extends EditRecord
             ->send();
     }
 
+    /**
+     * Skini vozilo iz tima.
+     */
+    public function skiniVozilo(int $timVoziloId): void
+    {
+        $tv = TimVozilo::find($timVoziloId);
+        if (!$tv || $tv->skinuto_u) {
+            return;
+        }
+
+        $tv->update(['skinuto_u' => now()]);
+
+        Notification::make()
+            ->title('Vozilo uklonjeno')
+            ->body(($tv->vozilo->registracija ?? '?') . ' više nije u timu')
+            ->success()
+            ->send();
+    }
+
     public function getViewData(): array
     {
         $tim = $this->record;
@@ -206,7 +273,7 @@ class EditTim extends EditRecord
         $trenutniClanovi = TimClanstvo::where('tim_id', $tim->id)
             ->whereNull('izasao_u')
             ->with(['vatrogasac.postrojba'])
-            ->orderBy('uloga', 'desc') // zapovjednik prvi
+            ->orderBy('uloga', 'desc')
             ->get();
 
         $povijestClanstva = TimClanstvo::where('tim_id', $tim->id)
@@ -214,6 +281,19 @@ class EditTim extends EditRecord
             ->with(['vatrogasac.postrojba'])
             ->orderBy('izasao_u', 'desc')
             ->limit(20)
+            ->get();
+
+        $trenutnaVozila = TimVozilo::where('tim_id', $tim->id)
+            ->whereNull('skinuto_u')
+            ->with(['vozilo.postrojba'])
+            ->orderBy('dodano_u')
+            ->get();
+
+        $povijestVozila = TimVozilo::where('tim_id', $tim->id)
+            ->whereNotNull('skinuto_u')
+            ->with(['vozilo.postrojba'])
+            ->orderBy('skinuto_u', 'desc')
+            ->limit(10)
             ->get();
 
         $statusLog = TimStatusLog::where('tim_id', $tim->id)
@@ -225,6 +305,8 @@ class EditTim extends EditRecord
             'tim' => $tim,
             'trenutniClanovi' => $trenutniClanovi,
             'povijestClanstva' => $povijestClanstva,
+            'trenutnaVozila' => $trenutnaVozila,
+            'povijestVozila' => $povijestVozila,
             'statusLog' => $statusLog,
         ];
     }
